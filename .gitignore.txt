@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Symfony
+/backend/vendor/
+/backend/var/
+
+# React / Vite
+/frontend/node_modules/
+/frontend/dist/
+
+# IDE
+.idea/
+.vscode/
