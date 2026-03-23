@@ -1,0 +1,10 @@
+# config/routes.yaml
+
+
+
+# 2. This tells Symfony to look at your Controllers (like AuthController)
+controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\Controller
+    type: attribute
