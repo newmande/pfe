@@ -40,4 +40,45 @@ class ReservationsRepository extends ServiceEntityRepository
     //            ->getOneOrNullResult()
     //        ;
     //    }
+
+    public function findByVehicleModel(string $model): array
+    {
+        return $this->createQueryBuilder('r')
+            ->join('r.vehicle', 'v')
+            ->andWhere('v.model = :model')
+            ->setParameter('model', $model)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByUserId(int $userId): array
+    {
+        return $this->createQueryBuilder('r')
+            ->join('r.user', 'u')
+            ->andWhere('u.id = :userId')
+            ->setParameter('userId', $userId)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByDriverId(int $driverId): array
+    {
+        return $this->createQueryBuilder('r')
+            ->join('r.driver', 'd')
+            ->andWhere('d.id = :driverId')
+            ->setParameter('driverId', $driverId)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findByVehicleId(int $vehicleId): array
+    {
+        return $this->createQueryBuilder('r')
+            ->join('r.vehicle', 'v')
+            ->andWhere('v.id = :vehicleId')
+            ->setParameter('vehicleId', $vehicleId)
+            ->getQuery()
+            ->getResult();
+    }
 }
+

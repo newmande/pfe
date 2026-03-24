@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\Users;
+use App\Repository\UsersRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use LongitudeOne\Spatial\PHP\Types\Geometry\Point;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -68,5 +69,31 @@ class UsersController extends AbstractController
                 'longitude' => $location->getX(),
             ] : null,
         ];
+    }
+
+    #[Route('/search/email/{email}', methods: ['GET'])]
+    public function searchByEmail(string $email, UsersRepository $repo): JsonResponse
+    {
+        $user = $repo->findOneBy(['email' => $email]);
+
+        if (!$user) {
+            return $this->json(['message' => 'User not found'], 404);
+        }
+
+        return $this->json($this->serialize($user));
+    }
+
+    #[Route('/search/name/{name}', methods: ['GET'])]
+    public function searchByName(string $name, UsersRepository $repo): JsonResponse
+    {
+        $users = $repo->findBy(['name' => $name]);
+
+        if (empty($users)) {
+            return $this->json([], 200);
+        }
+
+        $data = array_map(fn(Users $u) => $this->serialize($u), $users);
+
+        return $this->json($data);
     }
 }

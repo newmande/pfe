@@ -81,4 +81,37 @@ class VehiclesController extends AbstractController
             'availability' => $v->isAvailable(),
         ];
     }
+
+    #[Route('/type/{type}', methods: ['GET'])]
+    public function getByType(string $type, VehiclesRepository $repo): JsonResponse
+    {
+        $vehicles = $repo->findBy(['type' => $type]);
+        $data = array_map(fn($v) => $this->serialize($v), $vehicles);
+
+        return $this->json($data);
+    }
+
+    #[Route('/available', methods: ['GET'])]
+    public function getAvailable(VehiclesRepository $repo): JsonResponse
+    {
+        $vehicles = $repo->findBy(['availability' => true]);
+        $data = array_map(fn($v) => $this->serialize($v), $vehicles);
+
+        return $this->json($data);
+    }
+
+    #[Route('/search/{model}', methods: ['GET'])]
+    public function searchByModel(string $model, VehiclesRepository $repo): JsonResponse
+    {
+        $vehicle = $repo->findOneBy(['model' => $model]);
+
+        if (!$vehicle) {
+            return $this->json(['message' => 'Vehicle not found'], 404);
+        }
+
+        return $this->json($this->serialize($vehicle));
+    }
 }
+ 
+    
+        

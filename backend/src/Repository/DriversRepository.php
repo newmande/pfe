@@ -40,4 +40,27 @@ class DriversRepository extends ServiceEntityRepository
     //            ->getOneOrNullResult()
     //        ;
     //    }
+    public function findAvailableDriver(\DateTime $requestedStart, \DateTime $requestedEnd): ?Drivers
+{
+    $qb = $this->createQueryBuilder('d');
+
+    // 1. Basic availability check
+    $qb->where('d.available = :isAvailable')
+       ->setParameter('isAvailable', true);
+
+    // 2. Subquery to find "Busy" drivers during that time
+    $busyDriversSubquery = $this->_em->createQueryBuilder()
+        ->select('dv.driverId') // Assuming driverId is the link in DriverVehicle
+        ->from('App\Entity\DriverVehicle', 'dv')
+        ->where('dv.rideStart < :end') 
+        ->andWhere('dv.rideEnd > :start');
+
+    // 3. Exclude those busy drivers from the main results
+    $qb->andWhere($qb->expr()->notIn('d.id', $busyDriversSubquery->getDQL()))
+       ->setParameter('start', $requestedStart)
+       ->setParameter('end', $requestedEnd)
+       ->setMaxResults(1); // Get just one available driver
+
+    return $qb->getQuery()->getOneOrNullResult();
 }
+    }

@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\Reservations;
+use App\Entity\Vehicledriver;
 use App\Repository\ReservationsRepository;
 use App\Repository\DriversRepository;
 use App\Repository\VehiclesRepository;
@@ -46,6 +47,19 @@ class ReservationsController extends AbstractController
 
         // ✅ assign logged user (JWT)
         $reservation->setUser($this->getUser());
+        
+        $driver= $driversRepo->findAvailableDriver(
+            $reservation->getDatetime(),
+            $reservation->getDatetime()->modify('+1 hour')
+        );
+        $reservation->setDriver($driver);
+
+        $vehicle = $vehiclesRepo->findAvailableVehicle(
+            $data['type'],
+            $reservation->getDatetime(),
+            $reservation->getDatetime()->modify('+1 hour')
+        );
+        $reservation->setVehicle($vehicle);
 
         // ✅ set createdAt automatically
         $reservation->setCreatedat(new \DateTime());
@@ -75,7 +89,17 @@ class ReservationsController extends AbstractController
 
     #[Route('/{id}', methods: ['DELETE'])]
     public function delete(Reservations $reservation, EntityManagerInterface $em): JsonResponse
-    {
+    {   
+        $driverVehicle = $em->getRepository(Vehicledriver::class)->findOneBy([
+        'driver' => $reservation->getDriver()->getId(),
+        'vehicle' => $reservation->getVehicle()->getId(),
+        'rideStart' => $reservation->getDatetime() // Adding time ensures you delete the right "slot"
+    ]);
+
+    // 2. If a matching record exists, remove it
+    if ($driverVehicle) {
+        $em->remove($driverVehicle);
+    }
         $em->remove($reservation);
         $em->flush();
 
@@ -153,5 +177,29 @@ class ReservationsController extends AbstractController
 
             'createdat' => $r->getCreatedat()?->format('Y-m-d H:i:s'),
         ];
+    }
+
+    #[Route('/by-user/{userId}', methods: ['GET'])]
+    public function searchByUser(int $userId, ReservationsRepository $repo): JsonResponse
+    {
+        $reservations = $repo->findByUserId($userId);
+        $data = array_map(fn($r) => $this->serialize($r), $reservations);
+        return $this->json($data);
+    }
+
+    #[Route('/by-driver/{driverId}', methods: ['GET'])]
+    public function searchByDriver(int $driverId, ReservationsRepository $repo): JsonResponse
+    {
+        $reservations = $repo->findByDriverId($driverId);
+        $data = array_map(fn($r) => $this->serialize($r), $reservations);
+        return $this->json($data);
+    }
+
+    #[Route('/by-vehicle/{vehicleId}', methods: ['GET'])]
+    public function searchByVehicle(int $vehicleId, ReservationsRepository $repo): JsonResponse
+    {
+        $reservations = $repo->findByVehicleId($vehicleId);
+        $data = array_map(fn($r) => $this->serialize($r), $reservations);
+        return $this->json($data);
     }
 }

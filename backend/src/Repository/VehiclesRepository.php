@@ -40,4 +40,30 @@ class VehiclesRepository extends ServiceEntityRepository
     //            ->getOneOrNullResult()
     //        ;
     //    }
+    public function findAvailableVehicle(string $type, \DateTime $start, \DateTime $end): ?Vehicles
+{
+    $qb = $this->createQueryBuilder('v');
+
+    // 1. General availability AND the specific type
+    $qb->where('v.available = :isAvailable')
+       ->andWhere('v.type = :type') // Added this line
+       ->setParameter('isAvailable', true)
+       ->setParameter('type', $type);
+
+    // 2. Subquery for busy vehicles (remains the same)
+    $busyVehiclesSubquery = $this->_em->createQueryBuilder()
+        ->select('dv.vehicleId')
+        ->from('App\Entity\DriverVehicle', 'dv')
+        ->where('dv.rideStart < :end') 
+        ->andWhere('dv.rideEnd > :start');
+
+    // 3. Exclude busy vehicles from results
+    $qb->andWhere($qb->expr()->notIn('v.id', $busyVehiclesSubquery->getDQL()))
+       ->setParameter('start', $start)
+       ->setParameter('end', $end)
+       ->setMaxResults(1); 
+
+    return $qb->getQuery()->getOneOrNullResult();
 }
+    
+    }

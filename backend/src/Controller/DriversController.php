@@ -14,6 +14,7 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/drivers')]
 class DriversController extends AbstractController
 {
+    
     #[Route('', methods: ['GET'])]
     public function index(DriversRepository $repository): JsonResponse
     {
@@ -104,4 +105,29 @@ class DriversController extends AbstractController
             ] : null,
         ];
     }
+    #[Route('/search/name/{name}', name: 'search_by_name', methods: ['GET'])]
+    public function searchByName(string $name, DriversRepository $repository): JsonResponse
+    {
+        // findBy is a built-in Doctrine method
+        $drivers = $repository->findBy(['name' => $name]);
+
+        $data = array_map(fn($driver) => $this->serializeDriver($driver), $drivers);
+
+        return $this->json($data);
+    }
+
+    #[Route('/search/phone/{phone}', name: 'search_by_phone', methods: ['GET'])]
+    public function searchByPhone(string $phone, DriversRepository $repository): JsonResponse
+    {
+        // findOneBy if you expect phone numbers to be unique
+        $driver = $repository->findOneBy(['phone' => $phone]);
+
+        if (!$driver) {
+            return $this->json(['message' => 'Driver not found'], 404);
+        }
+
+        return $this->json($this->serializeDriver($driver));
+    }
+
+
 }
