@@ -43,10 +43,14 @@ class Reservations
     #[ORM\Column]
     private ?\DateTime $createdat = null;
 
-    
-    
+    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
+    private ?string $price = null;
 
-    
+    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
+    private ?string $distance = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
+    private ?string $duration = null;
 
     
 
@@ -163,13 +167,27 @@ class Reservations
         return $this;
     }
 
-   
+    public function getPrice(): ?string { return $this->price; }
 
-    
+    public function setPrice(?string $price): static
+    {
+        $this->price = $price;
+        return $this;
+    }
 
-    
+    public function getDistance(): ?string { return $this->distance; }
 
-    
+    public function setDistance(?string $distance): static
+    {
+        $this->distance = $distance;
+        return $this;
+    }
 
-    
+    public function getDuration(): ?string { return $this->duration; }
+
+    public function setDuration(?string $duration): static
+    {
+        $this->duration = $duration;
+        return $this;
+    }
 }

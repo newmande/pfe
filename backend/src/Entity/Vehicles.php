@@ -19,6 +19,9 @@ class Vehicles
     #[ORM\Column(length: 255)]
     private ?string $model = null;
 
+    #[ORM\Column(length: 255, unique: true)]
+    private ?string $license = null;
+
     #[ORM\Column(length: 255)]
     private ?string $type = null;
 
@@ -46,6 +49,14 @@ class Vehicles
     public function setModel(string $model): static
     {
         $this->model = $model;
+        return $this;
+    }
+
+    public function getLicense(): ?string { return $this->license; }
+
+    public function setLicense(string $license): static
+    {
+        $this->license = $license;
         return $this;
     }
 

@@ -28,6 +28,10 @@ security:
 
     access_control:
         - { path: ^/auth/login, roles: PUBLIC_ACCESS }
-        - { path: ^/auth/register,       roles: PUBLIC_ACCESS }
+        - { path: ^/auth/register$, roles: PUBLIC_ACCESS }
+        - { path: ^/auth/register-admin, roles: ROLE_ADMIN }
+        # Driver/Vehicle management - ADMIN only
+        - { path: ^/drivers, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
+        - { path: ^/vehicles, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
         # All other /api routes require a valid JWT token (ROLE_USER)
         - { path: ^/api,           roles: ROLE_USER }

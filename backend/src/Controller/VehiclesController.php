@@ -9,6 +9,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/vehicles')]
 class VehiclesController extends AbstractController
@@ -28,12 +29,14 @@ class VehiclesController extends AbstractController
     }
 
     #[Route('', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function create(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
         $vehicle = new Vehicles();
 
         if (isset($data['model'])) $vehicle->setModel($data['model']);
+        if (isset($data['license'])) $vehicle->setLicense($data['license']);
         if (isset($data['type'])) $vehicle->setType($data['type']);
         if (isset($data['capacity'])) $vehicle->setCapacity($data['capacity']);
         if (isset($data['priceperkm'])) $vehicle->setPriceperkm($data['priceperkm']);
@@ -46,11 +49,13 @@ class VehiclesController extends AbstractController
     }
 
     #[Route('/{id}', methods: ['PUT'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function update(Vehicles $vehicle, Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
         if (isset($data['model'])) $vehicle->setModel($data['model']);
+        if (isset($data['license'])) $vehicle->setLicense($data['license']);
         if (isset($data['type'])) $vehicle->setType($data['type']);
         if (isset($data['capacity'])) $vehicle->setCapacity($data['capacity']);
         if (isset($data['priceperkm'])) $vehicle->setPriceperkm($data['priceperkm']);
@@ -62,6 +67,7 @@ class VehiclesController extends AbstractController
     }
 
     #[Route('/{id}', methods: ['DELETE'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function delete(Vehicles $vehicle, EntityManagerInterface $em): JsonResponse
     {
         $em->remove($vehicle);
@@ -75,6 +81,7 @@ class VehiclesController extends AbstractController
         return [
             'id' => $v->getId(),
             'model' => $v->getModel(),
+            'license' => $v->getLicense(),
             'type' => $v->getType(),
             'capacity' => $v->getCapacity(),
             'priceperkm' => $v->getPriceperkm(),

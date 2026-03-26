@@ -7,15 +7,25 @@ use App\Entity\Vehicledriver;
 use App\Repository\ReservationsRepository;
 use App\Repository\DriversRepository;
 use App\Repository\VehiclesRepository;
+use App\Repository\UsersRepository;
+use App\Service\MapService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 #[Route('/reservations')]
 class ReservationsController extends AbstractController
 {
+    private MapService $mapService;
+
+    public function __construct(MapService $mapService)
+    {
+        $this->mapService = $mapService;
+    }
     #[Route('', methods: ['GET'])]
     public function index(ReservationsRepository $repo): JsonResponse
     {
@@ -63,6 +73,33 @@ class ReservationsController extends AbstractController
 
         // ✅ set createdAt automatically
         $reservation->setCreatedat(new \DateTime());
+
+        // ✅ Calculate ride estimate if addresses are provided
+        try {
+            if (!empty($reservation->getPickuplocation()) && !empty($reservation->getDropofflocation())) {
+                $pickupCoords = $this->mapService->addressToCoordinates($reservation->getPickuplocation());
+                $dropoffCoords = $this->mapService->addressToCoordinates($reservation->getDropofflocation());
+
+                if ($pickupCoords && $dropoffCoords) {
+                    $estimate = $this->mapService->getRideEstimate(
+                        $pickupCoords['lat'],
+                        $pickupCoords['lon'],
+                        $dropoffCoords['lat'],
+                        $dropoffCoords['lon']
+                    );
+
+                    if ($estimate) {
+                        $reservation->setDistance((string)$estimate['distance']);
+                        $reservation->setDuration((string)$estimate['duration']);
+                        $reservation->setPrice((string)$estimate['price']);
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            // Log error but don't fail the reservation
+            // You may want to add proper logging here
+            error_log('Route calculation failed: ' . $e->getMessage());
+        }
 
         $em->persist($reservation);
         $em->flush();
@@ -160,6 +197,9 @@ class ReservationsController extends AbstractController
             'dropofflocation' => $r->getDropofflocation(),
             'status' => $r->getStatus(),
             'numberofpassengers' => $r->getNumberofpassengers(),
+            'distance' => $r->getDistance(), // in km
+            'duration' => $r->getDuration(), // in minutes
+            'price' => $r->getPrice(), // in TND
 
             // ✅ relations (clean)
             'driver' => $r->getDriver() ? [
@@ -182,12 +222,21 @@ class ReservationsController extends AbstractController
     #[Route('/by-user/{userId}', methods: ['GET'])]
     public function searchByUser(int $userId, ReservationsRepository $repo): JsonResponse
     {
+        // Only ADMIN or the user themselves can view their reservations
+        /** @var Users $currentUser */
+        $currentUser = $this->getUser();
+        
+        if (!$currentUser || (!$this->isGranted('ROLE_ADMIN') && $currentUser->getId() !== $userId)) {
+            return $this->json(['error' => 'Access denied'], 403);
+        }
+
         $reservations = $repo->findByUserId($userId);
         $data = array_map(fn($r) => $this->serialize($r), $reservations);
         return $this->json($data);
     }
 
     #[Route('/by-driver/{driverId}', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function searchByDriver(int $driverId, ReservationsRepository $repo): JsonResponse
     {
         $reservations = $repo->findByDriverId($driverId);
@@ -196,10 +245,26 @@ class ReservationsController extends AbstractController
     }
 
     #[Route('/by-vehicle/{vehicleId}', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function searchByVehicle(int $vehicleId, ReservationsRepository $repo): JsonResponse
     {
         $reservations = $repo->findByVehicleId($vehicleId);
         $data = array_map(fn($r) => $this->serialize($r), $reservations);
+        return $this->json($data);
+    }
+
+    #[Route('/my-reservations', methods: ['GET'])]
+    public function getMyReservations(UsersRepository $usersRepo): JsonResponse
+    {
+        $user = $this->getUser();
+        
+        if (!$user) {
+            return $this->json(['error' => 'Not authenticated'], 401);
+        }
+
+        $reservations = $usersRepo->findUserReservations($user);
+        $data = array_map(fn($r) => $this->serialize($r), $reservations);
+
         return $this->json($data);
     }
 }

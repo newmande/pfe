@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 
 class AuthController extends AbstractController
@@ -106,5 +107,65 @@ class AuthController extends AbstractController
             'token' => $token,
             'roles' => $user->getRoles()
         ], 200);
+    }
+
+    #[IsGranted('ROLE_ADMIN')]
+    #[Route('/auth/register-admin', name: 'api_register_admin', methods: ['POST'])]
+    public function registerAdmin(
+        Request $request,
+        UserPasswordHasherInterface $hasher,
+        EntityManagerInterface $em,
+        JWTTokenManagerInterface $jwtManager
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+
+        $email = $data['email'] ?? null;
+        $password = $data['password'] ?? null;
+        $name = $data['name'] ?? 'Admin';
+        $phone = $data['phone'] ?? null;
+
+        if (!$email || !$password) {
+            return new JsonResponse(['error' => 'Email and password are required'], 400);
+        }
+
+        if (!$phone) {
+            return new JsonResponse(['error' => 'Phone is required'], 400);
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return new JsonResponse(['error' => 'Invalid email format'], 400);
+        }
+
+        $existingUser = $em->getRepository(Users::class)->findOneBy(['email' => $email]);
+        if ($existingUser) {
+            return new JsonResponse(['error' => 'Email already in use'], 400);
+        }
+
+        $user = new Users();
+        $user->setEmail($email);
+        $user->setName($name);
+        $user->setPhone($phone);
+        $user->setRole('ADMIN');
+        $user->setPassword($hasher->hashPassword($user, $password));
+
+        try {
+            $em->persist($user);
+            $em->flush();
+        } catch (\Exception $e) {
+            return new JsonResponse(['error' => 'Failed to create admin'], 500);
+        }
+
+        $token = $jwtManager->create($user);
+
+        return new JsonResponse([
+            'message' => 'Admin created successfully',
+            'user' => [
+                'id' => $user->getId(),
+                'name' => $user->getName(),
+                'email' => $user->getEmail(),
+                'roles' => $user->getRoles()
+            ],
+            'token' => $token
+        ], 201);
     }
 }

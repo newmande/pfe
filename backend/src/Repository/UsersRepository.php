@@ -16,6 +16,26 @@ class UsersRepository extends ServiceEntityRepository
         parent::__construct($registry, Users::class);
     }
 
+    /**
+     * Get all reservations for a specific user
+     * 
+     * @param Users|int $user The Users entity or user ID
+     * @return array Returns an array of Reservations objects
+     */
+    public function findUserReservations($user): array
+    {
+        $userId = $user instanceof Users ? $user->getId() : $user;
+
+        return $this->createQueryBuilder('u')
+            ->select('r')
+            ->innerJoin('u.history', 'r')
+            ->andWhere('u.id = :userId')
+            ->setParameter('userId', $userId)
+            ->getQuery()
+            ->getResult()
+        ;
+    }
+
     //    /**
     //     * @return Users[] Returns an array of Users objects
     //     */
