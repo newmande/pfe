@@ -3,268 +3,234 @@
 namespace App\Controller;
 
 use App\Entity\Reservations;
-use App\Entity\Vehicledriver;
+use App\Entity\Users;
+use App\Entity\VehicleDriver;
 use App\Repository\ReservationsRepository;
 use App\Repository\DriversRepository;
 use App\Repository\VehiclesRepository;
-use App\Repository\UsersRepository;
+use App\Repository\PricingRepository;
 use App\Service\MapService;
+use App\Validator\ReservationValidator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
 
-#[Route('/reservations')]
+#[Route('/api/reservations')]
 class ReservationsController extends AbstractController
 {
     private MapService $mapService;
+    private EntityManagerInterface $entityManager;
 
-    public function __construct(MapService $mapService)
+    public function __construct(MapService $mapService, EntityManagerInterface $entityManager)
     {
         $this->mapService = $mapService;
+        $this->entityManager = $entityManager;
     }
-    #[Route('', methods: ['GET'])]
-    public function index(ReservationsRepository $repo): JsonResponse
+
+    /**
+     * ✅ GET /api/reservations
+     */
+    #[Route('', name: 'app_reservations_index', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function index(Request $request, ReservationsRepository $repo): JsonResponse
     {
-        $reservations = $repo->findAll();
+        $page = max(1, $request->query->getInt('page', 1));
+        $limit = min(100, max(1, $request->query->getInt('limit', 20)));
+        $offset = ($page - 1) * $limit;
+
+        $qb = $repo->createQueryBuilder('r')
+            ->leftJoin('r.driver', 'd')->addSelect('d')
+            ->leftJoin('r.vehicle', 'v')->addSelect('v')
+            ->leftJoin('r.user', 'u')->addSelect('u')
+            ->orderBy('r.datetime', 'DESC')
+            ->setFirstResult($offset)
+            ->setMaxResults($limit);
+
+        $reservations = $qb->getQuery()->getResult();
+        $total = $repo->count([]);
 
         $data = array_map(fn($r) => $this->serialize($r), $reservations);
 
-        return $this->json($data);
+        return $this->json([
+            'data' => $data,
+            'pagination' => [
+                'total' => $total,
+                'page' => $page,
+                'pages' => (int)ceil($total / $limit)
+            ]
+        ]);
     }
 
-    #[Route('/{id}', methods: ['GET'])]
-    public function show(Reservations $reservation): JsonResponse
-    {
-        return $this->json($this->serialize($reservation));
-    }
-
-    #[Route('', methods: ['POST'])]
+    /**
+     * ✅ POST /api/reservations
+     */
+    #[Route('', name: 'app_reservations_create', methods: ['POST'])]
     public function create(
         Request $request,
-        EntityManagerInterface $em,
         DriversRepository $driversRepo,
-        VehiclesRepository $vehiclesRepo
+        VehiclesRepository $vehiclesRepo,
+        PricingRepository $pricingRepo
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
-        $reservation = new Reservations();
-
-        $this->mapData($reservation, $data, $driversRepo, $vehiclesRepo);
-
-        // ✅ assign logged user (JWT)
-        $reservation->setUser($this->getUser());
-        
-        $driver= $driversRepo->findAvailableDriver(
-            $reservation->getDatetime(),
-            $reservation->getDatetime()->modify('+1 hour')
-        );
-        $reservation->setDriver($driver);
-
-        $vehicle = $vehiclesRepo->findAvailableVehicle(
-            $data['type'],
-            $reservation->getDatetime(),
-            $reservation->getDatetime()->modify('+1 hour')
-        );
-        $reservation->setVehicle($vehicle);
-
-        // ✅ set createdAt automatically
-        $reservation->setCreatedat(new \DateTime());
-
-        // ✅ Calculate ride estimate if addresses are provided
         try {
-            if (!empty($reservation->getPickuplocation()) && !empty($reservation->getDropofflocation())) {
-                $pickupCoords = $this->mapService->addressToCoordinates($reservation->getPickuplocation());
-                $dropoffCoords = $this->mapService->addressToCoordinates($reservation->getDropofflocation());
+            ReservationValidator::validateReservationData($data);
+            
+            $user = $this->getUser();
+            if (!$user instanceof Users) {
+                return $this->json(['error' => 'Authentication required'], 401);
+            }
+
+            $reservation = new Reservations();
+            $this->mapData($reservation, $data);
+            $reservation->setUser($user);
+
+            // 1. Map Logic
+            $estimatedDuration = 60; 
+            if (!empty($data['pickupLocation']) && !empty($data['dropoffLocation'])) {
+                $pickupCoords = $this->mapService->addressToCoordinates($data['pickupLocation']);
+                $dropoffCoords = $this->mapService->addressToCoordinates($data['dropoffLocation']);
 
                 if ($pickupCoords && $dropoffCoords) {
                     $estimate = $this->mapService->getRideEstimate(
-                        $pickupCoords['lat'],
-                        $pickupCoords['lon'],
-                        $dropoffCoords['lat'],
-                        $dropoffCoords['lon']
+                        $pickupCoords['lat'], $pickupCoords['lon'],
+                        $dropoffCoords['lat'], $dropoffCoords['lon']
                     );
 
                     if ($estimate) {
                         $reservation->setDistance((string)$estimate['distance']);
                         $reservation->setDuration((string)$estimate['duration']);
-                        $reservation->setPrice((string)$estimate['price']);
+                        $estimatedDuration = (int)ceil($estimate['duration']);
                     }
                 }
             }
+
+            // 2. Type-Safe Date Calculation (Fixes Intelephense P1013)
+            /** @var \DateTime $startTime */
+            $startTime = $reservation->getDatetime();
+            if (!$startTime) {
+                return $this->json(['error' => 'Invalid reservation date'], 400);
+            }
+            
+            // Clone to avoid modifying the original start time
+            $endTime = (clone $startTime)->modify("+" . ($estimatedDuration + 15) . " minutes");
+
+            // 3. Resource Availability
+            $driver = $driversRepo->findAvailableDriver($startTime, $endTime);
+            $vehicle = $vehiclesRepo->findAvailableVehicle($data['type'] ?? 'sedan', $startTime, $endTime);
+
+            if (!$driver || !$vehicle) {
+                return $this->json(['error' => 'No driver or vehicle available for this time'], 409);
+            }
+
+            // 4. Capacity & Pricing
+            if ((int)($data['numberOfPassengers'] ?? 1) > $vehicle->getCapacity()) {
+                return $this->json(['error' => "Vehicle capacity exceeded"], 400);
+            }
+
+            $reservation->setDriver($driver);
+            $reservation->setVehicle($vehicle);
+
+            $pricing = $pricingRepo->findActiveByTypeAndCategory($vehicle->getType(), $vehicle->getCategory());
+            if ($pricing && $reservation->getDistance()) {
+                $reservation->setPrice((string)$pricing->calculatePrice((float)$reservation->getDistance()));
+            }
+
+            // 5. Create Overlap Record
+            $driverVehicle = new VehicleDriver();
+            $driverVehicle->setVehicle($vehicle);
+            $driverVehicle->setDriver($driver);
+            $driverVehicle->setStart($startTime);
+            $driverVehicle->setEnd($endTime);
+
+            $this->entityManager->persist($reservation);
+            $this->entityManager->persist($driverVehicle);
+            $this->entityManager->flush();
+
+            return $this->json($this->serialize($reservation), 201);
+
         } catch (\Exception $e) {
-            // Log error but don't fail the reservation
-            // You may want to add proper logging here
-            error_log('Route calculation failed: ' . $e->getMessage());
+            return $this->json(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    /**
+     * ✅ DELETE /api/reservations/{id}
+     */
+    #[Route('/{id}', name: 'app_reservations_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
+    public function delete(Reservations $reservation): JsonResponse
+    {
+        $user = $this->getUser();
+        if ($reservation->getUser() !== $user && !$this->isGranted('ROLE_ADMIN')) {
+            return $this->json(['error' => 'Access Denied'], 403);
         }
 
-        $em->persist($reservation);
-        $em->flush();
+        $assignment = $this->entityManager->getRepository(VehicleDriver::class)->findOneBy([
+            'driver' => $reservation->getDriver(),
+            'vehicle' => $reservation->getVehicle(),
+            'start' => $reservation->getDatetime()
+        ]);
 
-        return $this->json($this->serialize($reservation), 201);
+        if ($assignment) {
+            $this->entityManager->remove($assignment);
+        }
+
+        $this->entityManager->remove($reservation);
+        $this->entityManager->flush();
+
+        return $this->json(['message' => 'Reservation cancelled']);
     }
 
-    #[Route('/{id}', methods: ['PUT'])]
-    public function update(
-        Reservations $reservation,
-        Request $request,
-        EntityManagerInterface $em,
-        DriversRepository $driversRepo,
-        VehiclesRepository $vehiclesRepo
-    ): JsonResponse {
-        $data = json_decode($request->getContent(), true);
+    /**
+     * ✅ GET /api/reservations/my-reservations
+     */
+    #[Route('/my-reservations', name: 'app_reservations_my', methods: ['GET'])]
+    public function getMyReservations(ReservationsRepository $repo): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user) return $this->json(['error' => 'Unauthorized'], 401);
 
-        $this->mapData($reservation, $data, $driversRepo, $vehiclesRepo);
-
-        $em->flush();
-
-        return $this->json($this->serialize($reservation));
+        $reservations = $repo->findBy(['user' => $user], ['datetime' => 'DESC']);
+        return $this->json(array_map(fn($r) => $this->serialize($r), $reservations));
     }
 
-    #[Route('/{id}', methods: ['DELETE'])]
-    public function delete(Reservations $reservation, EntityManagerInterface $em): JsonResponse
-    {   
-        $driverVehicle = $em->getRepository(Vehicledriver::class)->findOneBy([
-        'driver' => $reservation->getDriver()->getId(),
-        'vehicle' => $reservation->getVehicle()->getId(),
-        'rideStart' => $reservation->getDatetime() // Adding time ensures you delete the right "slot"
-    ]);
-
-    // 2. If a matching record exists, remove it
-    if ($driverVehicle) {
-        $em->remove($driverVehicle);
-    }
-        $em->remove($reservation);
-        $em->flush();
-
-        return $this->json(['message' => 'Reservation deleted']);
-    }
-
-    // 🔁 Map request → entity
-    private function mapData(
-        Reservations $r,
-        array $data,
-        DriversRepository $driversRepo,
-        VehiclesRepository $vehiclesRepo
-    ): void {
+    /**
+     * 🔁 Internal Helper: Map Request → Entity
+     */
+    private function mapData(Reservations $r, array $data): void
+    {
         if (isset($data['datetime'])) {
             $r->setDatetime(new \DateTime($data['datetime']));
         }
-
-        if (isset($data['pickuplocation'])) {
-            $r->setPickuplocation($data['pickuplocation']);
-        }
-
-        if (isset($data['dropofflocation'])) {
-            $r->setDropofflocation($data['dropofflocation']);
-        }
-
-        if (isset($data['status'])) {
-            $r->setStatus($data['status']);
-        }
-
-        if (isset($data['numberofpassengers'])) {
-            $r->setNumberofpassengers($data['numberofpassengers']);
-        }
-
-        // ✅ Driver relation
-        if (isset($data['driver_id'])) {
-            $driver = $driversRepo->find($data['driver_id']);
-            if ($driver) {
-                $r->setDriver($driver);
-            }
-        }
-
-        // ✅ Vehicle relation
-        if (isset($data['vehicle_id'])) {
-            $vehicle = $vehiclesRepo->find($data['vehicle_id']);
-            if ($vehicle) {
-                $r->setVehicle($vehicle);
-            }
-        }
+        if (isset($data['pickupLocation'])) $r->setPickupLocation($data['pickupLocation']);
+        if (isset($data['dropoffLocation'])) $r->setDropoffLocation($data['dropoffLocation']);
+        if (isset($data['numberOfPassengers'])) $r->setNumberOfPassengers((int)$data['numberOfPassengers']);
+        if (isset($data['status'])) $r->setStatus($data['status'] ?? 'pending');
     }
 
-    // 🔁 Entity → array
+    /**
+     * 🔁 Internal Helper: Entity → Array
+     */
     private function serialize(Reservations $r): array
     {
         return [
             'id' => $r->getId(),
             'datetime' => $r->getDatetime()?->format('Y-m-d H:i:s'),
-            'pickuplocation' => $r->getPickuplocation(),
-            'dropofflocation' => $r->getDropofflocation(),
+            'pickupLocation' => $r->getPickupLocation(),
+            'dropoffLocation' => $r->getDropoffLocation(),
             'status' => $r->getStatus(),
-            'numberofpassengers' => $r->getNumberofpassengers(),
-            'distance' => $r->getDistance(), // in km
-            'duration' => $r->getDuration(), // in minutes
-            'price' => $r->getPrice(), // in TND
-
-            // ✅ relations (clean)
-            'driver' => $r->getDriver() ? [
-                'id' => $r->getDriver()->getId(),
-                'name' => $r->getDriver()->getName(),
-            ] : null,
-
+            'passengers' => $r->getNumberOfPassengers(),
+            'price' => $r->getPrice() . ' TND',
+            'distance' => $r->getDistance() . ' km',
+            'duration' => $r->getDuration() . ' mins',
+            'driver' => $r->getDriver() ? ['id' => $r->getDriver()->getId(), 'name' => $r->getDriver()->getName()] : null,
             'vehicle' => $r->getVehicle() ? [
-                'id' => $r->getVehicle()->getId(),
+                'model' => $r->getVehicle()->getModel(), 
+                'license' => $r->getVehicle()->getLicense()
             ] : null,
-
-            'user' => $r->getUser() ? [
-                'id' => $r->getUser()->getId(),
-            ] : null,
-
-            'createdat' => $r->getCreatedat()?->format('Y-m-d H:i:s'),
         ];
-    }
-
-    #[Route('/by-user/{userId}', methods: ['GET'])]
-    public function searchByUser(int $userId, ReservationsRepository $repo): JsonResponse
-    {
-        // Only ADMIN or the user themselves can view their reservations
-        /** @var Users $currentUser */
-        $currentUser = $this->getUser();
-        
-        if (!$currentUser || (!$this->isGranted('ROLE_ADMIN') && $currentUser->getId() !== $userId)) {
-            return $this->json(['error' => 'Access denied'], 403);
-        }
-
-        $reservations = $repo->findByUserId($userId);
-        $data = array_map(fn($r) => $this->serialize($r), $reservations);
-        return $this->json($data);
-    }
-
-    #[Route('/by-driver/{driverId}', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function searchByDriver(int $driverId, ReservationsRepository $repo): JsonResponse
-    {
-        $reservations = $repo->findByDriverId($driverId);
-        $data = array_map(fn($r) => $this->serialize($r), $reservations);
-        return $this->json($data);
-    }
-
-    #[Route('/by-vehicle/{vehicleId}', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function searchByVehicle(int $vehicleId, ReservationsRepository $repo): JsonResponse
-    {
-        $reservations = $repo->findByVehicleId($vehicleId);
-        $data = array_map(fn($r) => $this->serialize($r), $reservations);
-        return $this->json($data);
-    }
-
-    #[Route('/my-reservations', methods: ['GET'])]
-    public function getMyReservations(UsersRepository $usersRepo): JsonResponse
-    {
-        $user = $this->getUser();
-        
-        if (!$user) {
-            return $this->json(['error' => 'Not authenticated'], 401);
-        }
-
-        $reservations = $usersRepo->findUserReservations($user);
-        $data = array_map(fn($r) => $this->serialize($r), $reservations);
-
-        return $this->json($data);
     }
 }

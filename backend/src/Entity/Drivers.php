@@ -9,6 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 use LongitudeOne\Spatial\PHP\Types\SpatialInterface;
 
 #[ORM\Entity(repositoryClass: DriversRepository::class)]
+#[ORM\HasLifecycleCallbacks] // ✅ Essential for automatic updatedAt
 class Drivers
 {
     #[ORM\Id]
@@ -22,8 +23,22 @@ class Drivers
     #[ORM\Column(length: 255, unique: true)]
     private ?string $phone = null;
 
-    #[ORM\Column]
-    private ?bool $availability = null;
+    #[ORM\Column(options: ["default" => false])]
+    private bool $availability = false;
+
+    /**
+     * ✅ Optimized for MySQL POINT
+     * SRID 4326 is the GPS standard (WGS 84). 
+     * MySQL expects Point(longitude, latitude) for this SRID.
+     */
+    #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
+    private ?SpatialInterface $location = null;
+
+    #[ORM\Column(type: 'datetime_immutable')]
+    private ?\DateTimeImmutable $createdAt = null;
+
+    #[ORM\Column(type: 'datetime', nullable: true)]
+    private ?\DateTimeInterface $updatedAt = null;
 
     /**
      * @var Collection<int, Reservations>
@@ -31,12 +46,19 @@ class Drivers
     #[ORM\OneToMany(targetEntity: Reservations::class, mappedBy: 'driver')]
     private Collection $history;
 
-    #[ORM\Column(type: 'point')]
-    private ?SpatialInterface $location = null;
-
     public function __construct()
     {
         $this->history = new ArrayCollection();
+        $this->createdAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * ✅ Automatically updates the timestamp before every database update
+     */
+    #[ORM\PreUpdate]
+    public function updateTimestamp(): void
+    {
+        $this->updatedAt = new \DateTime();
     }
 
     public function getId(): ?int
@@ -52,7 +74,6 @@ class Drivers
     public function setName(string $name): static
     {
         $this->name = $name;
-
         return $this;
     }
 
@@ -64,11 +85,10 @@ class Drivers
     public function setPhone(string $phone): static
     {
         $this->phone = $phone;
-
         return $this;
     }
 
-    public function isAvailabile(): ?bool
+    public function isAvailable(): bool
     {
         return $this->availability;
     }
@@ -76,37 +96,33 @@ class Drivers
     public function setAvailability(bool $availability): static
     {
         $this->availability = $availability;
-
         return $this;
     }
 
     /**
-     * @return Collection<int, reservations>
+     * @return Collection<int, Reservations>
      */
     public function getHistory(): Collection
     {
         return $this->history;
     }
 
-    public function addHistory(reservations $history): static
+    public function addHistory(Reservations $history): static
     {
         if (!$this->history->contains($history)) {
             $this->history->add($history);
             $history->setDriver($this);
         }
-
         return $this;
     }
 
-    public function removeHistory(reservations $history): static
+    public function removeHistory(Reservations $history): static
     {
         if ($this->history->removeElement($history)) {
-            // set the owning side to null (unless already changed)
             if ($history->getDriver() === $this) {
                 $history->setDriver(null);
             }
         }
-
         return $this;
     }
 
@@ -115,10 +131,19 @@ class Drivers
         return $this->location;
     }
 
-    public function setLocation(SpatialInterface $location): static
+    public function setLocation(?SpatialInterface $location): static
     {
         $this->location = $location;
-
         return $this;
+    }
+
+    public function getCreatedAt(): ?\DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): ?\DateTimeInterface
+    {
+        return $this->updatedAt;
     }
 }

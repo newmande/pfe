@@ -2,6 +2,7 @@
 
 namespace App\Service;
 
+use App\Entity\Pricing;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class MapService
@@ -16,14 +17,17 @@ class MapService
     }
 
     /**
-     * Convert an address string to coordinates
-     * @return array ['lat' => float, 'lon' => float] or null if not found
+     * ✅ Geocoding: Address -> Coordinates
      */
     public function addressToCoordinates(string $address): ?array
     {
         try {
             $response = $this->httpClient->request('GET', 'https://api.tomtom.com/search/2/search/' . urlencode($address) . '.json', [
-                'query' => ['key' => $this->apiKey, 'limit' => 1]
+                'query' => [
+                    'key' => $this->apiKey, 
+                    'limit' => 1,
+                    'typeahead' => 'true'
+                ]
             ]);
 
             $data = $response->toArray();
@@ -34,17 +38,17 @@ class MapService
 
             $position = $data['results'][0]['position'];
             return [
-                'lat' => $position['lat'],
-                'lon' => $position['lon']
+                'lat' => (float)$position['lat'],
+                'lon' => (float)$position['lon']
             ];
         } catch (\Exception $e) {
-            throw new \RuntimeException('Geocoding failed: ' . $e->getMessage());
+            return null;
         }
     }
 
     /**
-     * Get ride estimate (distance, duration, and price)
-     * @return array ['distance' => float (km), 'duration' => float (minutes), 'price' => float (TND)]
+     * ✅ Routing: Calculate Distance and Duration via TomTom
+     * Renamed to getRideEstimate to match your Controller's expectation
      */
     public function getRideEstimate(float $startLat, float $startLon, float $endLat, float $endLon): ?array
     {
@@ -65,31 +69,14 @@ class MapService
                 return null;
             }
 
-            $route = $data['routes'][0]['summary'];
-
-            $distanceKm = $route['lengthInMeters'] / 1000;
-            $durationMin = $route['travelTimeInSeconds'] / 60;
-            $price = $this->calculatePrice($distanceKm, $durationMin);
+            $summary = $data['routes'][0]['summary'];
 
             return [
-                'distance' => round($distanceKm, 2),
-                'duration' => round($durationMin, 2),
-                'price' => round($price, 2)
+                'distance' => $summary['lengthInMeters'] / 1000, // KM
+                'duration' => $summary['travelTimeInSeconds'] / 60, // Minutes
             ];
         } catch (\Exception $e) {
-            throw new \RuntimeException('Route calculation failed: ' . $e->getMessage());
+            return null;
         }
-    }
-
-    /**
-     * Calculate ride price based on distance and duration
-     */
-    private function calculatePrice(float $km, float $min): float
-    {
-        $baseFare = 2.0; // TND
-        $perKm = 1.2;    // TND per km
-        $perMin = 0.1;   // TND per minute
-        
-        return $baseFare + ($km * $perKm) + ($min * $perMin);
     }
 }

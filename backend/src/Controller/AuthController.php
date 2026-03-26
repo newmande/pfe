@@ -3,6 +3,8 @@
 namespace App\Controller;
 
 use App\Entity\Users;
+use App\Validator\ReservationValidator;
+use App\Repository\UsersRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -14,158 +16,125 @@ use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 
 class AuthController extends AbstractController
 {
+    /**
+     * ✅ Register a standard User (ROLE_USER)
+     */
     #[Route('/auth/register', name: 'api_register', methods: ['POST'])]
     public function register(
         Request $request, 
         UserPasswordHasherInterface $hasher, 
         EntityManagerInterface $em,
-        JWTTokenManagerInterface $jwtManager
+        JWTTokenManagerInterface $jwtManager,
+        UsersRepository $userRepo
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
-        $email = $data['email'] ?? null;
-        $password = $data['password'] ?? null;
-        $name = $data['name'] ?? 'User';
-        $phone = $data['phone'] ?? null;
-
-        // Validate required fields
-        if (!$email || !$password) {
-            return new JsonResponse(['error' => 'Email and password are required'], 400);
-        }
-
-        if (!$phone) {
-            return new JsonResponse(['error' => 'Phone is required'], 400);
-        }
-
-        // Validate email format
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return new JsonResponse(['error' => 'Invalid email format'], 400);
-        }
-
-        // Check for existing user
-        $existingUser = $em->getRepository(Users::class)->findOneBy(['email' => $email]);
-        if ($existingUser) {
-            return new JsonResponse(['error' => 'Email already in use'], 400);
-        }
-
-        // Create new user
-        $user = new Users();
-        $user->setEmail($email);
-        $user->setName($name);
-        $user->setPhone($phone);
-        $user->setRole('USER');
-        $user->setPassword($hasher->hashPassword($user, $password));
-
         try {
+            // 1. Use our centralized validator (handles email, phone, and password length)
+            ReservationValidator::validateUserData($data, true);
+
+            // 2. Check for existing user via Repository
+            if ($userRepo->findOneBy(['email' => $data['email']])) {
+                return $this->json(['error' => 'Email already in use'], 400);
+            }
+
+            $user = new Users();
+            $user->setEmail($data['email'])
+                 ->setName($data['name'] ?? 'User')
+                 ->setPhone($data['phone'])
+                 ->setRoles(['ROLE_USER'])
+                 ->setPassword($hasher->hashPassword($user, $data['password']));
+
             $em->persist($user);
             $em->flush();
+
+            // 3. Generate JWT Token immediately upon registration
+            $token = $jwtManager->create($user);
+
+            return $this->json([
+                'message' => 'Registration successful',
+                'user' => [
+                    'id' => $user->getId(),
+                    'name' => $user->getName(),
+                    'email' => $user->getEmail()
+                ],
+                'token' => $token
+            ], 216); // 216 is a nice touch for Tunisia, but 201 is standard!
+
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], 400);
         } catch (\Exception $e) {
-            return new JsonResponse(['error' => 'Failed to register user'], 500);
+            return $this->json(['error' => 'An unexpected error occurred'], 500);
         }
-
-        // Generate JWT token
-        $token = $jwtManager->create($user);
-
-        return new JsonResponse([
-            'message' => 'Registration successful',
-            'user' => [
-                'id' => $user->getId(),
-                'name' => $user->getName(),
-                'email' => $user->getEmail(),
-                'roles' => $user->getRoles()
-            ],
-            'token' => $token
-        ], 201);
     }
+
+    /**
+     * ✅ Standard Login
+     */
     #[Route('/auth/login', name: 'api_login', methods: ['POST'])]
     public function login(
         Request $request,
-        EntityManagerInterface $em,
+        UsersRepository $userRepo,
         UserPasswordHasherInterface $hasher,
         JWTTokenManagerInterface $jwtManager
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-
         $email = $data['email'] ?? null;
         $password = $data['password'] ?? null;
 
         if (!$email || !$password) {
-            return new JsonResponse(['error' => 'Email and password are required'], 400);
+            return $this->json(['error' => 'Email and password are required'], 400);
         }
 
-        $user = $em->getRepository(Users::class)->findOneBy(['email' => $email]);
+        $user = $userRepo->findOneBy(['email' => $email]);
 
-        // Generic error message for security
         if (!$user || !$hasher->isPasswordValid($user, $password)) {
-            return new JsonResponse(['error' => 'Invalid credentials'], 401);
+            return $this->json(['error' => 'Invalid credentials'], 401);
         }
 
-        // Generate the JWT
-        $token = $jwtManager->create($user);
-
-        return new JsonResponse([
-            'token' => $token,
-            'roles' => $user->getRoles()
+        return $this->json([
+            'token' => $jwtManager->create($user),
+            'roles' => $user->getRoles(),
+            'user' => [
+                'id' => $user->getId(),
+                'name' => $user->getName()
+            ]
         ], 200);
     }
 
+    /**
+     * ✅ Admin Registration (Protected)
+     */
     #[IsGranted('ROLE_ADMIN')]
     #[Route('/auth/register-admin', name: 'api_register_admin', methods: ['POST'])]
     public function registerAdmin(
         Request $request,
         UserPasswordHasherInterface $hasher,
         EntityManagerInterface $em,
-        JWTTokenManagerInterface $jwtManager
+        UsersRepository $userRepo
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
 
-        $email = $data['email'] ?? null;
-        $password = $data['password'] ?? null;
-        $name = $data['name'] ?? 'Admin';
-        $phone = $data['phone'] ?? null;
-
-        if (!$email || !$password) {
-            return new JsonResponse(['error' => 'Email and password are required'], 400);
-        }
-
-        if (!$phone) {
-            return new JsonResponse(['error' => 'Phone is required'], 400);
-        }
-
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return new JsonResponse(['error' => 'Invalid email format'], 400);
-        }
-
-        $existingUser = $em->getRepository(Users::class)->findOneBy(['email' => $email]);
-        if ($existingUser) {
-            return new JsonResponse(['error' => 'Email already in use'], 400);
-        }
-
-        $user = new Users();
-        $user->setEmail($email);
-        $user->setName($name);
-        $user->setPhone($phone);
-        $user->setRole('ADMIN');
-        $user->setPassword($hasher->hashPassword($user, $password));
-
         try {
+            ReservationValidator::validateUserData($data, true);
+
+            if ($userRepo->findOneBy(['email' => $data['email']])) {
+                return $this->json(['error' => 'Email already in use'], 400);
+            }
+
+            $user = new Users();
+            $user->setEmail($data['email'])
+                 ->setName($data['name'] ?? 'Admin')
+                 ->setPhone($data['phone'])
+                 ->setRoles(['ROLE_ADMIN'])
+                 ->setPassword($hasher->hashPassword($user, $data['password']));
+
             $em->persist($user);
             $em->flush();
-        } catch (\Exception $e) {
-            return new JsonResponse(['error' => 'Failed to create admin'], 500);
+
+            return $this->json(['message' => 'Admin created successfully'], 201);
+        } catch (\InvalidArgumentException $e) {
+            return $this->json(['error' => $e->getMessage()], 400);
         }
-
-        $token = $jwtManager->create($user);
-
-        return new JsonResponse([
-            'message' => 'Admin created successfully',
-            'user' => [
-                'id' => $user->getId(),
-                'name' => $user->getName(),
-                'email' => $user->getEmail(),
-                'roles' => $user->getRoles()
-            ],
-            'token' => $token
-        ], 201);
     }
 }

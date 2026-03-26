@@ -12,47 +12,128 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
-#[Route('/users')]
+#[Route('/api/users')]
 class UsersController extends AbstractController
 {
-    #[Route('/me', methods: ['GET'])]
+    /**
+     * ✅ GET /api/users/me
+     * Get the currently logged-in user profile.
+     */
+    #[Route('/me', name: 'user_me', methods: ['GET'])]
+    #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function me(): JsonResponse
     {
         /** @var Users $user */
         $user = $this->getUser();
-
         return $this->json($this->serialize($user));
     }
 
-    #[Route('/me', methods: ['PUT'])]
+    /**
+     * ✅ PUT /api/users/me
+     * Allow a user to update their own profile (name, phone, location).
+     */
+    #[Route('/me', name: 'user_update_me', methods: ['PUT'])]
+    #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function updateMe(Request $request, EntityManagerInterface $em): JsonResponse
     {
         /** @var Users $user */
         $user = $this->getUser();
-
-        if (!$user instanceof Users) {
-            return $this->json(['error' => 'Unauthorized'], 401);
-        }
-
         $data = json_decode($request->getContent(), true);
-
-        if (isset($data['name'])) {
-            $user->setName($data['name']);
-        }
-
-        if (isset($data['phone'])) {
-            $user->setPhone($data['phone']);
-        }
-
-        if (isset($data['latitude']) && isset($data['longitude'])) {
-            // ⚡ Correct Point creation: longitude first, latitude second
-            $point = new Point($data['longitude'], $data['latitude']);
-            $user->setLocation($point);
-        }
-
+        
+        $this->mapUserData($user, $data);
         $em->flush();
 
         return $this->json($this->serialize($user));
+    }
+
+    /**
+     * ✅ GET /api/users/all
+     * Admin only: List all registered users.
+     */
+    #[Route('', name: 'user_list_all', methods: ['GET'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function getAllUsers(UsersRepository $repo): JsonResponse
+    {
+        $users = $repo->findAll();
+        $data = array_map(fn(Users $u) => $this->serialize($u), $users);
+        
+        return $this->json($data);
+    }
+
+    /**
+     * ✅ GET /api/users/search/email/{email}
+     */
+    #[Route('/search/email/{email}', name: 'user_search_email', methods: ['GET'])]
+    public function searchByEmail(string $email, UsersRepository $repo): JsonResponse
+    {
+        /** @var Users|null $currentUser */
+        $currentUser = $this->getUser();
+        
+        if (!$currentUser || ($email !== $currentUser->getEmail() && !$this->isGranted('ROLE_ADMIN'))) {
+            return $this->json(['error' => 'Access denied'], 403);
+        }
+
+        $user = $repo->findOneBy(['email' => $email]);
+        if (!$user) {
+            return $this->json(['error' => 'User not found'], 404);
+        }
+
+        return $this->json($this->serialize($user));
+    }
+
+    /**
+     * ✅ PUT /api/users/{id}
+     * Admin only: Update any user and their roles.
+     */
+    #[Route('/{id}', name: 'user_admin_update', methods: ['PUT'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function updateUser(Users $user, Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+        $this->mapUserData($user, $data);
+
+        if (isset($data['role'])) {
+            $role = strtoupper($data['role']);
+            if (!str_starts_with($role, 'ROLE_')) {
+                $role = 'ROLE_' . $role;
+            }
+            $user->setRoles([$role]);
+        }
+
+        $em->flush();
+        return $this->json($this->serialize($user));
+    }
+
+    /**
+     * ✅ DELETE /api/users/{id}
+     * Admin only: Remove a user.
+     */
+    #[Route('/{id}', name: 'user_admin_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function deleteUser(Users $user, EntityManagerInterface $em): JsonResponse
+    {
+        $em->remove($user);
+        $em->flush();
+
+        return $this->json(['message' => "User {$user->getEmail()} deleted"]);
+    }
+
+    // --- Private Helpers ---
+
+    private function mapUserData(Users $user, array $data): void
+    {
+        if (isset($data['name'])) $user->setName($data['name']);
+        if (isset($data['phone'])) $user->setPhone($data['phone']);
+
+        if (isset($data['latitude'], $data['longitude'])) {
+            $lat = (float)$data['latitude'];
+            $lon = (float)$data['longitude'];
+
+            if ($lat >= -90 && $lat <= 90 && $lon >= -180 && $lon <= 180) {
+                // LongitudeOne Spatial uses (X, Y) where X=Lon, Y=Lat
+                $user->setLocation(new Point($lon, $lat));
+            }
+        }
     }
 
     private function serialize(Users $user): array
@@ -70,81 +151,5 @@ class UsersController extends AbstractController
                 'longitude' => $location->getX(),
             ] : null,
         ];
-    }
-
-    #[Route('/search/email/{email}', methods: ['GET'])]
-    public function searchByEmail(string $email, UsersRepository $repo): JsonResponse
-    {
-        $user = $repo->findOneBy(['email' => $email]);
-
-        if (!$user) {
-            return $this->json(['message' => 'User not found'], 404);
-        }
-
-        return $this->json($this->serialize($user));
-    }
-
-    #[Route('/search/name/{name}', methods: ['GET'])]
-    public function searchByName(string $name, UsersRepository $repo): JsonResponse
-    {
-        $users = $repo->findBy(['name' => $name]);
-
-        if (empty($users)) {
-            return $this->json([], 200);
-        }
-
-        $data = array_map(fn(Users $u) => $this->serialize($u), $users);
-
-        return $this->json($data);
-    }
-
-    // ✅ ADMIN only - Get all users
-    #[Route('/all', methods: ['GET'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function getAllUsers(UsersRepository $repo): JsonResponse
-    {
-        $users = $repo->findAll();
-        $data = array_map(fn(Users $u) => $this->serialize($u), $users);
-        return $this->json($data);
-    }
-
-    // ✅ ADMIN only - Update any user
-    #[Route('/{id}', methods: ['PUT'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function updateUser(Users $user, Request $request, EntityManagerInterface $em): JsonResponse
-    {
-        $data = json_decode($request->getContent(), true);
-
-        if (isset($data['name'])) {
-            $user->setName($data['name']);
-        }
-
-        if (isset($data['phone'])) {
-            $user->setPhone($data['phone']);
-        }
-
-        if (isset($data['role'])) {
-            $user->setRole($data['role']);
-        }
-
-        if (isset($data['latitude']) && isset($data['longitude'])) {
-            $point = new Point($data['longitude'], $data['latitude']);
-            $user->setLocation($point);
-        }
-
-        $em->flush();
-
-        return $this->json($this->serialize($user));
-    }
-
-    // ✅ ADMIN only - Delete user
-    #[Route('/{id}', methods: ['DELETE'])]
-    #[IsGranted('ROLE_ADMIN')]
-    public function deleteUser(Users $user, EntityManagerInterface $em): JsonResponse
-    {
-        $em->remove($user);
-        $em->flush();
-
-        return $this->json(['message' => 'User deleted']);
     }
 }

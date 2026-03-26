@@ -17,47 +17,55 @@ class UsersRepository extends ServiceEntityRepository
     }
 
     /**
-     * Get all reservations for a specific user
-     * 
-     * @param Users|int $user The Users entity or user ID
-     * @return array Returns an array of Reservations objects
+     * ✅ Eager-loads history, drivers, and vehicles in ONE query.
+     * Note: Changed 'u.reservations' to 'u.history' to match your Entity.
      */
-    public function findUserReservations($user): array
+    public function findByEmailWithReservations(string $email): ?Users
+    {
+        return $this->createQueryBuilder('u')
+            ->where('u.email = :email')
+            ->setParameter('email', $email)
+            ->leftJoin('u.history', 'h') // Matches Users::$history
+            ->addSelect('h')
+            ->leftJoin('h.driver', 'd')
+            ->addSelect('d')
+            ->leftJoin('h.vehicle', 'v')
+            ->addSelect('v')
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * ✅ Gets history directly. 
+     * Using 'h' alias to stay consistent with the OneToMany mapping.
+     */
+    public function findUserReservations(Users|int $user): array
     {
         $userId = $user instanceof Users ? $user->getId() : $user;
 
-        return $this->createQueryBuilder('u')
-            ->select('r')
-            ->innerJoin('u.history', 'r')
-            ->andWhere('u.id = :userId')
+        return $this->_em->createQueryBuilder()
+            ->select('h')
+            ->from(\App\Entity\Reservations::class, 'h')
+            ->where('h.user = :userId')
             ->setParameter('userId', $userId)
+            ->orderBy('h.datetime', 'DESC')
             ->getQuery()
-            ->getResult()
-        ;
+            ->getResult();
     }
 
-    //    /**
-    //     * @return Users[] Returns an array of Users objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('u')
-    //            ->andWhere('u.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('u.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
+    /**
+     * ✅ Spatial Lookup for Users
+     * Useful if you want to push notifications to users in a specific area.
+     */
+    public function findUsersInArea(float $lng, float $lat, float $radiusMeters = 2000): array
+    {
+        $point = sprintf('POINT(%f %f)', $lng, $lat);
 
-    //    public function findOneBySomeField($value): ?Users
-    //    {
-    //        return $this->createQueryBuilder('u')
-    //            ->andWhere('u.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+        return $this->createQueryBuilder('u')
+            ->where("ST_Distance_Sphere(u.location, ST_GeomFromText(:origin, 4326)) <= :radius")
+            ->setParameter('origin', $point)
+            ->setParameter('radius', $radiusMeters)
+            ->getQuery()
+            ->getResult();
+    }
 }

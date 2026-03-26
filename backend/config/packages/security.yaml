@@ -13,13 +13,13 @@ security:
             pattern: ^/(_(profiler|wdt)|css|images|js)/
             security: false
 
-        #login:
-            #pattern: ^/auth/login
-            #stateless: true
-            #json_login:
-                #check_path: /auth/login
-                #success_handler: lexik_jwt_authentication.handler.authentication_success
-                #failure_handler: lexik_jwt_authentication.handler.authentication_failure
+        login:
+            pattern: ^/auth/login
+            stateless: true
+            json_login:
+                check_path: /auth/login
+                success_handler: lexik_jwt_authentication.handler.authentication_success
+                failure_handler: lexik_jwt_authentication.handler.authentication_failure
 
         api:
             pattern: ^/api
@@ -33,5 +33,6 @@ security:
         # Driver/Vehicle management - ADMIN only
         - { path: ^/drivers, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
         - { path: ^/vehicles, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
+        - { path: ^/api/pricing, methods: [POST, PUT, PATCH, DELETE], roles: ROLE_ADMIN }
         # All other /api routes require a valid JWT token (ROLE_USER)
-        - { path: ^/api,           roles: ROLE_USER }
+        - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }

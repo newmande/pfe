@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Drivers;
+use App\Entity\Reservations;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -16,51 +17,66 @@ class DriversRepository extends ServiceEntityRepository
         parent::__construct($registry, Drivers::class);
     }
 
-    //    /**
-    //     * @return Drivers[] Returns an array of Drivers objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('d')
-    //            ->andWhere('d.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('d.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
+    /**
+     * ✅ Optimized availability check
+     * Finds a driver who is toggled "available" AND has no overlapping reservations.
+     */
+    public function findAvailableDriver(\DateTimeInterface $start, \DateTimeInterface $end): ?Drivers
+    {
+        $qb = $this->createQueryBuilder('d');
 
-    //    public function findOneBySomeField($value): ?Drivers
-    //    {
-    //        return $this->createQueryBuilder('d')
-    //            ->andWhere('d.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
-    public function findAvailableDriver(\DateTime $requestedStart, \DateTime $requestedEnd): ?Drivers
-{
-    $qb = $this->createQueryBuilder('d');
+        // 1. Check basic toggle
+        $qb->where('d.availability = :isAvailable')
+           ->setParameter('isAvailable', true);
 
-    // 1. Basic availability check
-    $qb->where('d.available = :isAvailable')
-       ->setParameter('isAvailable', true);
+        // 2. Subquery: Find IDs of drivers who have a reservation overlapping this time slot
+        $busyDriversSubquery = $this->_em->createQueryBuilder()
+            ->select('IDENTITY(r.driver)')
+            ->from(Reservations::class, 'r')
+            ->where('r.driver IS NOT NULL')
+            ->andWhere('r.datetime < :end') 
+            // Note: If you have a specific 'end_time' field in Reservations, use it here. 
+            // Otherwise, we assume a buffer (e.g., datetime + 1 hour).
+            ->andWhere('r.datetime > :start');
 
-    // 2. Subquery to find "Busy" drivers during that time
-    $busyDriversSubquery = $this->_em->createQueryBuilder()
-        ->select('dv.driverId') // Assuming driverId is the link in DriverVehicle
-        ->from('App\Entity\DriverVehicle', 'dv')
-        ->where('dv.rideStart < :end') 
-        ->andWhere('dv.rideEnd > :start');
+        // 3. Filter out the busy ones
+        $qb->andWhere($qb->expr()->notIn('d.id', $busyDriversSubquery->getDQL()))
+           ->setParameter('start', $start)
+           ->setParameter('end', $end)
+           ->setMaxResults(1);
 
-    // 3. Exclude those busy drivers from the main results
-    $qb->andWhere($qb->expr()->notIn('d.id', $busyDriversSubquery->getDQL()))
-       ->setParameter('start', $requestedStart)
-       ->setParameter('end', $requestedEnd)
-       ->setMaxResults(1); // Get just one available driver
-
-    return $qb->getQuery()->getOneOrNullResult();
-}
+        return $qb->getQuery()->getOneOrNullResult();
     }
+
+    /**
+     * ✅ Spatial Search for TomTom Integration
+     * Finds drivers within a specific radius (in meters) from a point.
+     * MySQL uses Longitude then Latitude for Point(x, y).
+     */
+    public function findNearbyDrivers(float $lng, float $lat, float $radiusMeters = 5000): array
+    {
+        $point = sprintf('POINT(%f %f)', $lng, $lat);
+
+        return $this->createQueryBuilder('d')
+            ->where("ST_Distance_Sphere(d.location, ST_GeomFromText(:origin, 4326)) <= :radius")
+            ->andWhere('d.availability = :available')
+            ->setParameter('origin', $point)
+            ->setParameter('radius', $radiusMeters)
+            ->setParameter('available', true)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * ✅ Eager loading to avoid N+1 queries
+     */
+    public function findAllWithRelations(): array
+    {
+        return $this->createQueryBuilder('d')
+            ->leftJoin('d.history', 'h')
+            ->addSelect('h')
+            ->orderBy('d.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+}

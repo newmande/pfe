@@ -16,37 +16,35 @@ class ReservationsRepository extends ServiceEntityRepository
         parent::__construct($registry, Reservations::class);
     }
 
-    //    /**
-    //     * @return Reservations[] Returns an array of Reservations objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('r')
-    //            ->andWhere('r.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('r.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
-
-    //    public function findOneBySomeField($value): ?Reservations
-    //    {
-    //        return $this->createQueryBuilder('r')
-    //            ->andWhere('r.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
-
-    public function findByVehicleModel(string $model): array
+    /**
+     * ✅ Eager loading: Fetches driver, vehicle, and user in one go.
+     */
+    public function findAllWithRelations(): array
     {
         return $this->createQueryBuilder('r')
-            ->join('r.vehicle', 'v')
-            ->andWhere('v.model = :model')
-            ->setParameter('model', $model)
+            ->leftJoin('r.driver', 'd')
+            ->addSelect('d')
+            ->leftJoin('r.vehicle', 'v')
+            ->addSelect('v')
+            ->leftJoin('r.user', 'u')
+            ->addSelect('u')
+            ->orderBy('r.datetime', 'DESC') // Newest trips first
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * ✅ Finds active trips (for the live dashboard)
+     */
+    public function findActiveReservations(): array
+    {
+        return $this->createQueryBuilder('r')
+            ->where('r.status IN (:activeStatuses)')
+            ->setParameter('activeStatuses', [
+                Reservations::STATUS_PENDING,
+                Reservations::STATUS_CONFIRMED
+            ])
+            ->orderBy('r.datetime', 'ASC')
             ->getQuery()
             ->getResult();
     }
@@ -54,9 +52,9 @@ class ReservationsRepository extends ServiceEntityRepository
     public function findByUserId(int $userId): array
     {
         return $this->createQueryBuilder('r')
-            ->join('r.user', 'u')
-            ->andWhere('u.id = :userId')
+            ->where('r.user = :userId')
             ->setParameter('userId', $userId)
+            ->orderBy('r.datetime', 'DESC')
             ->getQuery()
             ->getResult();
     }
@@ -64,9 +62,9 @@ class ReservationsRepository extends ServiceEntityRepository
     public function findByDriverId(int $driverId): array
     {
         return $this->createQueryBuilder('r')
-            ->join('r.driver', 'd')
-            ->andWhere('d.id = :driverId')
+            ->where('r.driver = :driverId')
             ->setParameter('driverId', $driverId)
+            ->orderBy('r.datetime', 'DESC')
             ->getQuery()
             ->getResult();
     }
@@ -74,11 +72,24 @@ class ReservationsRepository extends ServiceEntityRepository
     public function findByVehicleId(int $vehicleId): array
     {
         return $this->createQueryBuilder('r')
-            ->join('r.vehicle', 'v')
-            ->andWhere('v.id = :vehicleId')
+            ->where('r.vehicle = :vehicleId')
             ->setParameter('vehicleId', $vehicleId)
+            ->orderBy('r.datetime', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * ✅ Partial match search for vehicle model within reservations
+     */
+    public function findByVehicleModel(string $model): array
+    {
+        return $this->createQueryBuilder('r')
+            ->join('r.vehicle', 'v')
+            ->where('v.model LIKE :model')
+            ->setParameter('model', '%' . $model . '%')
+            ->orderBy('r.datetime', 'DESC')
             ->getQuery()
             ->getResult();
     }
 }
-

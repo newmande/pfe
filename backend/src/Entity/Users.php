@@ -21,6 +21,9 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255)]
     private ?string $name = null;
 
+    /**
+     * @var string The hashed password
+     */
     #[ORM\Column(length: 255)]
     private ?string $password = null;
 
@@ -30,18 +33,28 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255, nullable: true, unique: true)]
     private ?string $phone = null;
 
+    /**
+     * Internal role string (e.g., 'admin', 'user')
+     */
     #[ORM\Column(length: 255)]
-    private ?string $role = 'user';
+    private string $role = 'user';
 
-    #[ORM\OneToMany(mappedBy: 'user', targetEntity: Reservations::class)]
+    /**
+     * @var Collection<int, Reservations>
+     */
+    #[ORM\OneToMany(targetEntity: Reservations::class, mappedBy: 'user')]
     private Collection $history;
 
-    #[ORM\Column(type: 'point', nullable: true)]
+    /**
+     * ✅ SRID 4326 for MySQL Spatial compatibility
+     */
+    #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
     private ?SpatialInterface $location = null;
 
     public function __construct()
     {
         $this->history = new ArrayCollection();
+        $this->role = 'user';
     }
 
     public function getId(): ?int { return $this->id; }
@@ -54,6 +67,9 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
+    /**
+     * @see PasswordAuthenticatedUserInterface
+     */
     public function getPassword(): ?string { return $this->password; }
 
     public function setPassword(string $password): static
@@ -78,7 +94,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
-    public function getRole(): ?string { return $this->role; }
+    public function getRole(): string { return $this->role; }
 
     public function setRole(string $role): static
     {
@@ -86,25 +102,53 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
-    // ✅ Symfony roles
+    /**
+     * ✅ Required by UserInterface
+     * Returns the roles granted to the user.
+     */
     public function getRoles(): array
     {
-        $roles = ['ROLE_' . strtoupper($this->role ?? 'USER')];
-
-        if (!in_array('ROLE_USER', $roles)) {
-            $roles[] = 'ROLE_USER';
-        }
+        // Convert internal string to Symfony format (ROLE_ADMIN, etc)
+        $role = 'ROLE_' . strtoupper($this->role);
+        
+        $roles = [$role];
+        // guarantee every user at least has ROLE_USER
+        $roles[] = 'ROLE_USER';
 
         return array_unique($roles);
     }
 
+    /**
+     * ✅ Used for manual role setting (like in your Admin controller)
+     */
+    public function setRoles(array $roles): static
+    {
+        // Clean up the input (e.g., ['ROLE_ADMIN'] -> 'admin')
+        $mainRole = $roles[0] ?? 'user';
+        $this->role = strtolower(str_replace('ROLE_', '', $mainRole));
+        
+        return $this;
+    }
+
+    /**
+     * @see UserInterface
+     */
     public function getUserIdentifier(): string
     {
         return (string) $this->email;
     }
 
-    public function eraseCredentials(): void {}
+    /**
+     * @see UserInterface
+     */
+    public function eraseCredentials(): void 
+    {
+        // If you store any temporary, sensitive data on the user, clear it here
+    }
 
+    /**
+     * @return Collection<int, Reservations>
+     */
     public function getHistory(): Collection
     {
         return $this->history;

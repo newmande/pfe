@@ -22,24 +22,37 @@ class Vehicles
     #[ORM\Column(length: 255, unique: true)]
     private ?string $license = null;
 
+    /**
+     * e.g., Car, Van, Motorcycle
+     */
     #[ORM\Column(length: 255)]
     private ?string $type = null;
 
+    /**
+     * e.g., Economy, Luxury, XL
+     */
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $category = null;
+
     #[ORM\Column(type: Types::INTEGER)]
-    private ?int $capacity = null;
+    private int $capacity = 1;
 
-    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 3)]
-    private ?string $priceperkm = null;
+    /**
+     * ✅ Added default value for boolean stability
+     */
+    #[ORM\Column(options: ["default" => true])]
+    private bool $availability = true;
 
-    #[ORM\Column]
-    private ?bool $availability = null;
-
+    /**
+     * @var Collection<int, Reservations>
+     */
     #[ORM\OneToMany(targetEntity: Reservations::class, mappedBy: 'vehicle')]
     private Collection $history;
 
     public function __construct()
     {
         $this->history = new ArrayCollection();
+        $this->availability = true;
     }
 
     public function getId(): ?int { return $this->id; }
@@ -68,7 +81,15 @@ class Vehicles
         return $this;
     }
 
-    public function getCapacity(): ?int { return $this->capacity; }
+    public function getCategory(): ?string { return $this->category; }
+
+    public function setCategory(?string $category): static
+    {
+        $this->category = $category;
+        return $this;
+    }
+
+    public function getCapacity(): int { return $this->capacity; }
 
     public function setCapacity(int $capacity): static
     {
@@ -76,15 +97,13 @@ class Vehicles
         return $this;
     }
 
-    public function getPriceperkm(): ?string { return $this->priceperkm; }
-
-    public function setPriceperkm(string $priceperkm): static
+    /**
+     * ✅ Method name matches your Controller's serialize() method
+     */
+    public function isAvailable(): bool
     {
-        $this->priceperkm = $priceperkm;
-        return $this;
+        return $this->availability;
     }
-
-    public function isAvailable(): ?bool { return $this->availability; }
 
     public function setAvailability(bool $availability): static
     {
@@ -92,6 +111,9 @@ class Vehicles
         return $this;
     }
 
+    /**
+     * @return Collection<int, Reservations>
+     */
     public function getHistory(): Collection
     {
         return $this->history;
@@ -103,7 +125,6 @@ class Vehicles
             $this->history->add($history);
             $history->setVehicle($this);
         }
-
         return $this;
     }
 
@@ -114,7 +135,6 @@ class Vehicles
                 $history->setVehicle(null);
             }
         }
-
         return $this;
     }
 }
