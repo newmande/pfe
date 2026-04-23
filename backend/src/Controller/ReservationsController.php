@@ -4,7 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Reservations;
 use App\Entity\Users;
-use App\Entity\VehicleDriver;
+
 use App\Repository\ReservationsRepository;
 use App\Repository\DriversRepository;
 use App\Repository\VehiclesRepository;
@@ -14,9 +14,15 @@ use App\Validator\ReservationValidator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
+use Symfony\Bridge\Twig\Mime\TemplatedEmail;
+use Symfony\Component\Mailer\MailerInterface;
+use SymfonyCasts\Bundle\VerifyEmail\VerifyEmailHelperInterface;
+use SymfonyCasts\Bundle\VerifyEmail\Exception\VerifyEmailExceptionInterface;
+
 
 #[Route('/api/reservations')]
 class ReservationsController extends AbstractController
@@ -30,9 +36,7 @@ class ReservationsController extends AbstractController
         $this->entityManager = $entityManager;
     }
 
-    /**
-     * ✅ GET /api/reservations
-     */
+    
     #[Route('', name: 'app_reservations_index', methods: ['GET'])]
     #[IsGranted('ROLE_ADMIN')]
     public function index(Request $request, ReservationsRepository $repo): JsonResponse
@@ -64,18 +68,18 @@ class ReservationsController extends AbstractController
         ]);
     }
 
-    /**
-     * ✅ POST /api/reservations
-     */
+    
     #[Route('', name: 'app_reservations_create', methods: ['POST'])]
     public function create(
         Request $request,
         DriversRepository $driversRepo,
         VehiclesRepository $vehiclesRepo,
-        PricingRepository $pricingRepo
+        PricingRepository $pricingRepo,
+       VerifyEmailHelperInterface $verifyEmailHelper,
+        MailerInterface $mailer
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
-
+        
         try {
             ReservationValidator::validateReservationData($data);
             
@@ -88,7 +92,7 @@ class ReservationsController extends AbstractController
             $this->mapData($reservation, $data);
             $reservation->setUser($user);
 
-            // 1. Map Logic
+            
             $estimatedDuration = 60; 
             if (!empty($data['pickupLocation']) && !empty($data['dropoffLocation'])) {
                 $pickupCoords = $this->mapService->addressToCoordinates($data['pickupLocation']);
@@ -108,17 +112,17 @@ class ReservationsController extends AbstractController
                 }
             }
 
-            // 2. Type-Safe Date Calculation (Fixes Intelephense P1013)
+            
             /** @var \DateTime $startTime */
             $startTime = $reservation->getDatetime();
             if (!$startTime) {
                 return $this->json(['error' => 'Invalid reservation date'], 400);
             }
             
-            // Clone to avoid modifying the original start time
+            
             $endTime = (clone $startTime)->modify("+" . ($estimatedDuration + 15) . " minutes");
 
-            // 3. Resource Availability
+            
             $driver = $driversRepo->findAvailableDriver($startTime, $endTime);
             $vehicle = $vehiclesRepo->findAvailableVehicle($data['type'] ?? 'sedan', $startTime, $endTime);
 
@@ -126,40 +130,52 @@ class ReservationsController extends AbstractController
                 return $this->json(['error' => 'No driver or vehicle available for this time'], 409);
             }
 
-            // 4. Capacity & Pricing
+            
             if ((int)($data['numberOfPassengers'] ?? 1) > $vehicle->getCapacity()) {
                 return $this->json(['error' => "Vehicle capacity exceeded"], 400);
             }
 
             $reservation->setDriver($driver);
             $reservation->setVehicle($vehicle);
-
+            $reservation->setStatus('pending');
             $pricing = $pricingRepo->findActiveByTypeAndCategory($vehicle->getType(), $vehicle->getCategory());
             if ($pricing && $reservation->getDistance()) {
                 $reservation->setPrice((string)$pricing->calculatePrice((float)$reservation->getDistance()));
             }
-
-            // 5. Create Overlap Record
-            $driverVehicle = new VehicleDriver();
-            $driverVehicle->setVehicle($vehicle);
-            $driverVehicle->setDriver($driver);
-            $driverVehicle->setStart($startTime);
-            $driverVehicle->setEnd($endTime);
-
+            
             $this->entityManager->persist($reservation);
-            $this->entityManager->persist($driverVehicle);
             $this->entityManager->flush();
+            $signatureComponents = $verifyEmailHelper->generateSignature(
+                'api_reservation_confirm', // Route name below
+               (string) $reservation->getId(),
+                $user->getEmail(),
+                [
+                   'id' => $reservation->getId(),
+                ]
+            );
 
-            return $this->json($this->serialize($reservation), 201);
+            $email = (new TemplatedEmail())
+                ->from('noreply@yourdomain.com')
+                ->to($user->getEmail())
+                ->subject('Complete your Reservation')
+                ->htmlTemplate('emails/reservation_verify.html.twig')
+                ->context(['signedUrl' => $signatureComponents->getSignedUrl()]);
 
-        } catch (\Exception $e) {
+            $mailer->send($email);
+            return $this->json([
+                'message' => 'Verification email sent. Please confirm to complete reservation.'
+            ], 202);
+            } catch (\Exception $e) {
             return $this->json(['error' => $e->getMessage()], 400);
         }
+            
+            
+
+            
+        
     }
 
-    /**
-     * ✅ DELETE /api/reservations/{id}
-     */
+    
     #[Route('/{id}', name: 'app_reservations_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
     public function delete(Reservations $reservation): JsonResponse
     {
@@ -168,15 +184,7 @@ class ReservationsController extends AbstractController
             return $this->json(['error' => 'Access Denied'], 403);
         }
 
-        $assignment = $this->entityManager->getRepository(VehicleDriver::class)->findOneBy([
-            'driver' => $reservation->getDriver(),
-            'vehicle' => $reservation->getVehicle(),
-            'start' => $reservation->getDatetime()
-        ]);
 
-        if ($assignment) {
-            $this->entityManager->remove($assignment);
-        }
 
         $this->entityManager->remove($reservation);
         $this->entityManager->flush();
@@ -184,9 +192,7 @@ class ReservationsController extends AbstractController
         return $this->json(['message' => 'Reservation cancelled']);
     }
 
-    /**
-     * ✅ GET /api/reservations/my-reservations
-     */
+    
     #[Route('/my-reservations', name: 'app_reservations_my', methods: ['GET'])]
     public function getMyReservations(ReservationsRepository $repo): JsonResponse
     {
@@ -197,9 +203,7 @@ class ReservationsController extends AbstractController
         return $this->json(array_map(fn($r) => $this->serialize($r), $reservations));
     }
 
-    /**
-     * 🔁 Internal Helper: Map Request → Entity
-     */
+    
     private function mapData(Reservations $r, array $data): void
     {
         if (isset($data['datetime'])) {
@@ -211,9 +215,7 @@ class ReservationsController extends AbstractController
         if (isset($data['status'])) $r->setStatus($data['status'] ?? 'pending');
     }
 
-    /**
-     * 🔁 Internal Helper: Entity → Array
-     */
+    
     private function serialize(Reservations $r): array
     {
         return [
@@ -233,4 +235,33 @@ class ReservationsController extends AbstractController
             ] : null,
         ];
     }
-}
+    #[Route('/reservation-confirm/{id}', name: 'api_reservation_confirm', methods: ['GET'])]
+public function confirmRegistration(
+    Request $request,
+    EntityManagerInterface $em,
+    Reservations $reservation, 
+    VerifyEmailHelperInterface $verifyEmailHelper
+): Response {
+    try {
+        $verifyEmailHelper->validateEmailConfirmation(
+            $request->getUri(), 
+            (string) $reservation->getId(), 
+            $reservation->getUser()->getEmail()
+        );
+    } catch (VerifyEmailExceptionInterface $e) {
+        return $this->json(['error' => $e->getReason()], 400);
+    }
+
+    // Check if it's already confirmed to avoid redundant work
+    if ($reservation->getStatus() === 'confirmed') {
+        return $this->json(['message' => 'Reservation was already confirmed.'], 200);
+    }
+
+    // Update the existing record
+    $reservation->setStatus('confirmed');
+    $em->flush(); // No need for persist() if the object came from the DB
+
+    return $this->json(['message' => 'Reservation confirmed successfully!'], 200);
+}}
+
+        

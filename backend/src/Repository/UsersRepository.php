@@ -16,16 +16,13 @@ class UsersRepository extends ServiceEntityRepository
         parent::__construct($registry, Users::class);
     }
 
-    /**
-     * ✅ Eager-loads history, drivers, and vehicles in ONE query.
-     * Note: Changed 'u.reservations' to 'u.history' to match your Entity.
-     */
+  
     public function findByEmailWithReservations(string $email): ?Users
     {
         return $this->createQueryBuilder('u')
             ->where('u.email = :email')
             ->setParameter('email', $email)
-            ->leftJoin('u.history', 'h') // Matches Users::$history
+            ->leftJoin('u.history', 'h') 
             ->addSelect('h')
             ->leftJoin('h.driver', 'd')
             ->addSelect('d')
@@ -35,10 +32,7 @@ class UsersRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    /**
-     * ✅ Gets history directly. 
-     * Using 'h' alias to stay consistent with the OneToMany mapping.
-     */
+    
     public function findUserReservations(Users|int $user): array
     {
         $userId = $user instanceof Users ? $user->getId() : $user;
@@ -53,10 +47,7 @@ class UsersRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /**
-     * ✅ Spatial Lookup for Users
-     * Useful if you want to push notifications to users in a specific area.
-     */
+    
     public function findUsersInArea(float $lng, float $lat, float $radiusMeters = 2000): array
     {
         $point = sprintf('POINT(%f %f)', $lng, $lat);

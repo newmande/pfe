@@ -22,24 +22,18 @@ class Vehicles
     #[ORM\Column(length: 255, unique: true)]
     private ?string $license = null;
 
-    /**
-     * e.g., Car, Van, Motorcycle
-     */
+    
     #[ORM\Column(length: 255)]
     private ?string $type = null;
 
-    /**
-     * e.g., Economy, Luxury, XL
-     */
+    
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $category = null;
 
     #[ORM\Column(type: Types::INTEGER)]
     private int $capacity = 1;
 
-    /**
-     * ✅ Added default value for boolean stability
-     */
+    
     #[ORM\Column(options: ["default" => true])]
     private bool $availability = true;
 
@@ -97,9 +91,7 @@ class Vehicles
         return $this;
     }
 
-    /**
-     * ✅ Method name matches your Controller's serialize() method
-     */
+    
     public function isAvailable(): bool
     {
         return $this->availability;

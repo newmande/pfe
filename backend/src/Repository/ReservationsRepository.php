@@ -16,9 +16,7 @@ class ReservationsRepository extends ServiceEntityRepository
         parent::__construct($registry, Reservations::class);
     }
 
-    /**
-     * ✅ Eager loading: Fetches driver, vehicle, and user in one go.
-     */
+    
     public function findAllWithRelations(): array
     {
         return $this->createQueryBuilder('r')
@@ -28,14 +26,12 @@ class ReservationsRepository extends ServiceEntityRepository
             ->addSelect('v')
             ->leftJoin('r.user', 'u')
             ->addSelect('u')
-            ->orderBy('r.datetime', 'DESC') // Newest trips first
+            ->orderBy('r.datetime', 'DESC') 
             ->getQuery()
             ->getResult();
     }
 
-    /**
-     * ✅ Finds active trips (for the live dashboard)
-     */
+    
     public function findActiveReservations(): array
     {
         return $this->createQueryBuilder('r')
@@ -79,9 +75,7 @@ class ReservationsRepository extends ServiceEntityRepository
             ->getResult();
     }
 
-    /**
-     * ✅ Partial match search for vehicle model within reservations
-     */
+    
     public function findByVehicleModel(string $model): array
     {
         return $this->createQueryBuilder('r')

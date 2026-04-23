@@ -33,6 +33,6 @@ security:
         # Driver/Vehicle management - ADMIN only
         - { path: ^/drivers, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
         - { path: ^/vehicles, methods: [POST, PUT, DELETE], roles: ROLE_ADMIN }
-        - { path: ^/api/pricing, methods: [POST, PUT, PATCH, DELETE], roles: ROLE_ADMIN }
+        - { path: ^/pricing, methods: [POST, PUT, PATCH, DELETE], roles: ROLE_ADMIN }
         # All other /api routes require a valid JWT token (ROLE_USER)
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }

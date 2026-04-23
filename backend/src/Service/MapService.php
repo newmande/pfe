@@ -16,9 +16,7 @@ class MapService
         $this->apiKey = $tomtomApiKey;
     }
 
-    /**
-     * ✅ Geocoding: Address -> Coordinates
-     */
+   
     public function addressToCoordinates(string $address): ?array
     {
         try {
@@ -46,10 +44,7 @@ class MapService
         }
     }
 
-    /**
-     * ✅ Routing: Calculate Distance and Duration via TomTom
-     * Renamed to getRideEstimate to match your Controller's expectation
-     */
+    
     public function getRideEstimate(float $startLat, float $startLon, float $endLat, float $endLon): ?array
     {
         try {

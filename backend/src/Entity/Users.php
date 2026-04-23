@@ -21,9 +21,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255)]
     private ?string $name = null;
 
-    /**
-     * @var string The hashed password
-     */
+    
     #[ORM\Column(length: 255)]
     private ?string $password = null;
 
@@ -33,9 +31,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255, nullable: true, unique: true)]
     private ?string $phone = null;
 
-    /**
-     * Internal role string (e.g., 'admin', 'user')
-     */
+    
     #[ORM\Column(length: 255)]
     private string $role = 'user';
 
@@ -45,9 +41,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: Reservations::class, mappedBy: 'user')]
     private Collection $history;
 
-    /**
-     * ✅ SRID 4326 for MySQL Spatial compatibility
-     */
+   
     #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
     private ?SpatialInterface $location = null;
 
@@ -102,28 +96,23 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
-    /**
-     * ✅ Required by UserInterface
-     * Returns the roles granted to the user.
-     */
+    
     public function getRoles(): array
     {
-        // Convert internal string to Symfony format (ROLE_ADMIN, etc)
+        
         $role = 'ROLE_' . strtoupper($this->role);
         
         $roles = [$role];
-        // guarantee every user at least has ROLE_USER
+        
         $roles[] = 'ROLE_USER';
 
         return array_unique($roles);
     }
 
-    /**
-     * ✅ Used for manual role setting (like in your Admin controller)
-     */
+   
     public function setRoles(array $roles): static
     {
-        // Clean up the input (e.g., ['ROLE_ADMIN'] -> 'admin')
+        
         $mainRole = $roles[0] ?? 'user';
         $this->role = strtolower(str_replace('ROLE_', '', $mainRole));
         
@@ -143,7 +132,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
      */
     public function eraseCredentials(): void 
     {
-        // If you store any temporary, sensitive data on the user, clear it here
+        
     }
 
     /**

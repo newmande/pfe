@@ -10,12 +10,10 @@ use DateInterval;
 
 class ReservationValidator
 {
-    /**
-     * ✅ Validate reservation data (Booking Flow)
-     */
+    
     public static function validateReservationData(array $data): void
     {
-        // 1. Check Required Fields
+        
         $required = ['datetime', 'pickupLocation', 'dropoffLocation', 'numberOfPassengers'];
         foreach ($required as $field) {
             if (empty($data[$field])) {
@@ -23,12 +21,12 @@ class ReservationValidator
             }
         }
 
-        // 2. Prevent Identical Locations
+        
         if (trim(strtolower($data['pickupLocation'])) === trim(strtolower($data['dropoffLocation']))) {
             throw new InvalidArgumentException('Pickup and drop-off locations cannot be the same.');
         }
 
-        // 3. Datetime Validation (Must be +30 mins from now)
+       
         try {
             $datetime = new DateTime($data['datetime']);
             $minTime = (new DateTime())->add(new DateInterval('PT30M'));
@@ -39,13 +37,13 @@ class ReservationValidator
             throw new InvalidArgumentException('Invalid datetime format. Please use YYYY-MM-DD HH:MM.');
         }
 
-        // 4. Passenger Limits
+        
         $passengers = (int)$data['numberOfPassengers'];
         if ($passengers < 1 || $passengers > 8) {
             throw new InvalidArgumentException('Number of passengers must be between 1 and 8.');
         }
 
-        // 5. Status Safety (Uses Entity Constants)
+        
         if (isset($data['status'])) {
             $valid = [
                 Reservations::STATUS_PENDING, 
@@ -59,9 +57,7 @@ class ReservationValidator
         }
     }
 
-    /**
-     * ✅ Validate Vehicle Data
-     */
+    
     public static function validateVehicleData(array $data): void
     {
         $requiredFields = ['model', 'license', 'type', 'category', 'capacity'];
@@ -91,9 +87,7 @@ class ReservationValidator
         }
     }
 
-    /**
-     * ✅ Validate Driver Data
-     */
+    
     public static function validateDriverData(array $data): void
     {
         if (isset($data['name']) && strlen(trim($data['name'])) < 2) {
@@ -113,9 +107,7 @@ class ReservationValidator
         }
     }
 
-    /**
-     * ✅ Validate User Data
-     */
+   
     public static function validateUserData(array $data, bool $isNew = true): void
     {
         if (isset($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
@@ -131,9 +123,7 @@ class ReservationValidator
         }
     }
 
-    /**
-     * ✅ Validate Pricing Rules
-     */
+    
     public static function validatePricingData(array $data): void
     {
         $fields = ['baseFare', 'pricePerKm', 'minimumFare'];
@@ -148,9 +138,7 @@ class ReservationValidator
         }
     }
 
-    /**
-     * ✅ Global Phone Format Helper
-     */
+    
     private static function validatePhoneNumber(string $phone): bool
     {
         $cleanPhone = preg_replace('/[^0-9+]/', '', $phone);

@@ -9,7 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: ReservationsRepository::class)]
 class Reservations
 {
-    // Status Constants for application-wide consistency
+    
     public const STATUS_PENDING = 'pending';
     public const STATUS_CONFIRMED = 'confirmed';
     public const STATUS_CANCELLED = 'cancelled';

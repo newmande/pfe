@@ -15,10 +15,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[Route('/api/users')]
 class UsersController extends AbstractController
 {
-    /**
-     * ✅ GET /api/users/me
-     * Get the currently logged-in user profile.
-     */
+    
     #[Route('/me', name: 'user_me', methods: ['GET'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function me(): JsonResponse
@@ -28,10 +25,7 @@ class UsersController extends AbstractController
         return $this->json($this->serialize($user));
     }
 
-    /**
-     * ✅ PUT /api/users/me
-     * Allow a user to update their own profile (name, phone, location).
-     */
+    
     #[Route('/me', name: 'user_update_me', methods: ['PUT'])]
     #[IsGranted('IS_AUTHENTICATED_FULLY')]
     public function updateMe(Request $request, EntityManagerInterface $em): JsonResponse
@@ -46,10 +40,7 @@ class UsersController extends AbstractController
         return $this->json($this->serialize($user));
     }
 
-    /**
-     * ✅ GET /api/users/all
-     * Admin only: List all registered users.
-     */
+    
     #[Route('', name: 'user_list_all', methods: ['GET'])]
     #[IsGranted('ROLE_ADMIN')]
     public function getAllUsers(UsersRepository $repo): JsonResponse
@@ -60,9 +51,7 @@ class UsersController extends AbstractController
         return $this->json($data);
     }
 
-    /**
-     * ✅ GET /api/users/search/email/{email}
-     */
+    
     #[Route('/search/email/{email}', name: 'user_search_email', methods: ['GET'])]
     public function searchByEmail(string $email, UsersRepository $repo): JsonResponse
     {
@@ -81,10 +70,7 @@ class UsersController extends AbstractController
         return $this->json($this->serialize($user));
     }
 
-    /**
-     * ✅ PUT /api/users/{id}
-     * Admin only: Update any user and their roles.
-     */
+   
     #[Route('/{id}', name: 'user_admin_update', methods: ['PUT'], requirements: ['id' => '\d+'])]
     #[IsGranted('ROLE_ADMIN')]
     public function updateUser(Users $user, Request $request, EntityManagerInterface $em): JsonResponse
@@ -104,10 +90,7 @@ class UsersController extends AbstractController
         return $this->json($this->serialize($user));
     }
 
-    /**
-     * ✅ DELETE /api/users/{id}
-     * Admin only: Remove a user.
-     */
+    
     #[Route('/{id}', name: 'user_admin_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
     #[IsGranted('ROLE_ADMIN')]
     public function deleteUser(Users $user, EntityManagerInterface $em): JsonResponse
@@ -118,7 +101,7 @@ class UsersController extends AbstractController
         return $this->json(['message' => "User {$user->getEmail()} deleted"]);
     }
 
-    // --- Private Helpers ---
+    
 
     private function mapUserData(Users $user, array $data): void
     {
@@ -130,7 +113,7 @@ class UsersController extends AbstractController
             $lon = (float)$data['longitude'];
 
             if ($lat >= -90 && $lat <= 90 && $lon >= -180 && $lon <= 180) {
-                // LongitudeOne Spatial uses (X, Y) where X=Lon, Y=Lat
+                
                 $user->setLocation(new Point($lon, $lat));
             }
         }

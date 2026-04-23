@@ -16,9 +16,6 @@ class PricingRepository extends ServiceEntityRepository
         parent::__construct($registry, Pricing::class);
     }
 
-    /**
-     * ✅ Optimized to find the most recent active price for a specific vehicle and category.
-     */
     public function findActiveByTypeAndCategory(string $vehicleType, ?string $categoryType = null): ?Pricing
     {
         $qb = $this->createQueryBuilder('p')
@@ -27,12 +24,12 @@ class PricingRepository extends ServiceEntityRepository
             ->setParameter('active', true)
             ->setParameter('vehicleType', $vehicleType);
 
-        // ✅ Handle both null and empty string scenarios
+        
         if (!empty($categoryType)) {
             $qb->andWhere('p.categoryType = :categoryType')
                ->setParameter('categoryType', $categoryType);
         } else {
-            // Optional: If you want to strictly match "General" or NULL categories
+            
             $qb->andWhere('p.categoryType IS NULL OR p.categoryType = :empty')
                ->setParameter('empty', '');
         }
@@ -43,15 +40,13 @@ class PricingRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
-    /**
-     * ✅ Useful for a "Price List" view in the frontend.
-     */
+    
     public function findAllActive(): array
     {
         return $this->createQueryBuilder('p')
             ->where('p.active = :active')
             ->setParameter('active', true)
-            ->orderBy('p.vehicleType', 'ASC') // Grouping by type is usually better for lists
+            ->orderBy('p.vehicleType', 'ASC') 
             ->addOrderBy('p.createdAt', 'DESC')
             ->getQuery()
             ->getResult();

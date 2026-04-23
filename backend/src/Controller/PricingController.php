@@ -16,10 +16,7 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 #[IsGranted('ROLE_ADMIN')]
 class PricingController extends AbstractController
 {
-    /**
-     * ✅ GET /api/pricing
-     * List all active pricing configurations.
-     */
+   
     #[Route('', name: 'app_pricing_index', methods: ['GET'])]
     public function index(PricingRepository $repo): JsonResponse
     {
@@ -33,10 +30,7 @@ class PricingController extends AbstractController
         ]);
     }
 
-    /**
-     * ✅ GET /api/pricing/find
-     * Priority is set to 2 to ensure "find" isn't mistaken for an ID.
-     */
+   
     #[Route('/find', name: 'app_pricing_find', methods: ['GET'], priority: 2)]
     public function findByTypeCategory(Request $request, PricingRepository $repo): JsonResponse
     {
@@ -56,26 +50,21 @@ class PricingController extends AbstractController
         return $this->json($this->serializePricing($pricing));
     }
 
-    /**
-     * ✅ GET /api/pricing/{id}
-     */
+    
     #[Route('/{id}', name: 'app_pricing_show', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function show(Pricing $pricing): JsonResponse
     {
         return $this->json($this->serializePricing($pricing));
     }
 
-    /**
-     * ✅ POST /api/pricing
-     * Note: createdAt is handled by the Entity __construct().
-     */
+    
     #[Route('', name: 'app_pricing_create', methods: ['POST'])]
     public function create(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
         try {
-            // 1. Validate data types and logic
+            
             ReservationValidator::validatePricingData($data);
 
             $pricing = new Pricing(); 
@@ -90,10 +79,7 @@ class PricingController extends AbstractController
         }
     }
 
-    /**
-     * ✅ PUT/PATCH /api/pricing/{id}
-     * Note: updatedAt is handled by the Entity #[ORM\PreUpdate] callback.
-     */
+    
     #[Route('/{id}', name: 'app_pricing_update', methods: ['PUT', 'PATCH'], requirements: ['id' => '\d+'])]
     public function update(Pricing $pricing, Request $request, EntityManagerInterface $em): JsonResponse
     {
@@ -104,7 +90,7 @@ class PricingController extends AbstractController
 
             $this->mapData($pricing, $data);
             
-            // Doctrine's flush triggers the onPreUpdate callback in the Entity
+            
             $em->flush();
 
             return $this->json($this->serializePricing($pricing));
@@ -113,9 +99,7 @@ class PricingController extends AbstractController
         }
     }
 
-    /**
-     * ✅ DELETE /api/pricing/{id}
-     */
+    
     #[Route('/{id}', name: 'app_pricing_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
     public function delete(Pricing $pricing, EntityManagerInterface $em): JsonResponse
     {
@@ -125,9 +109,7 @@ class PricingController extends AbstractController
         return $this->json(['message' => 'Pricing rule deleted successfully']);
     }
 
-    /**
-     * 🔁 Internal Helper: Sync array data to Pricing Entity with strict casting
-     */
+    
     private function mapData(Pricing $pricing, array $data): void
     {
         if (isset($data['vehicleType'])) $pricing->setVehicleType((string)$data['vehicleType']);
@@ -136,7 +118,7 @@ class PricingController extends AbstractController
         if (isset($data['pricePerKm'])) $pricing->setPricePerKm((float)$data['pricePerKm']);
         if (isset($data['minimumFare'])) $pricing->setMinimumFare((float)$data['minimumFare']);
         
-        // Handle nullable maximumFare
+        
         if (array_key_exists('maximumFare', $data)) {
             $pricing->setMaximumFare($data['maximumFare'] !== null ? (float)$data['maximumFare'] : null);
         }
@@ -147,9 +129,7 @@ class PricingController extends AbstractController
         if (isset($data['notes'])) $pricing->setNotes((string)$data['notes']);
     }
 
-    /**
-     * 🔁 Internal Serializer: Convert Entity to clean API-ready Array
-     */
+   
     private function serializePricing(Pricing $p): array
     {
         return [

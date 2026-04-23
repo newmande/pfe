@@ -26,11 +26,7 @@ class Drivers
     #[ORM\Column(options: ["default" => false])]
     private bool $availability = false;
 
-    /**
-     * ✅ Optimized for MySQL POINT
-     * SRID 4326 is the GPS standard (WGS 84). 
-     * MySQL expects Point(longitude, latitude) for this SRID.
-     */
+    
     #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
     private ?SpatialInterface $location = null;
 
@@ -52,9 +48,7 @@ class Drivers
         $this->createdAt = new \DateTimeImmutable();
     }
 
-    /**
-     * ✅ Automatically updates the timestamp before every database update
-     */
+    
     #[ORM\PreUpdate]
     public function updateTimestamp(): void
     {
