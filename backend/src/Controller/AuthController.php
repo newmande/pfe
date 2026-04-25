@@ -25,6 +25,72 @@ class AuthController extends AbstractController
      * Step 1: Receives registration data, validates it, and sends a signed email.
      * The user is NOT saved to the database yet.
      */
+    #[Route('/auth/forgot_password', name: 'api_forgot_password', methods: ['POST'])]
+    public function forgotPassword(Request $request,UsersRepository $userRepo,
+        VerifyEmailHelperInterface $verifyEmailHelper,
+        MailerInterface $mailer): JsonResponse
+    {
+        $email= $request->request->get('email');
+        $password = $request->request->get('password');
+        
+        $user = $userRepo->findOneBy(['email' => $email]);
+        if (!$user) {
+            return $this->json(['error' => 'Email not found'], 404);
+        }
+         $signatureComponents = $verifyEmailHelper->generateSignature(
+                'api_forgot_password', // Route name below
+                $email,
+                $email,
+                [
+                    'email' => $email,
+                    'password' => $password // In a real implementation, generate a secure token instead
+                ]
+            );
+
+            $email = (new TemplatedEmail())
+                ->from('noreply@yourdomain.com')
+                ->to($email)
+                ->subject('Complete your Registration')
+                ->htmlTemplate('emails/registration_verify.html.twig')
+                ->context(['signedUrl' => $signatureComponents->getSignedUrl()]);
+
+            $mailer->send($email);
+        return $this->json(['message' => 'Password reset functionality not implemented yet.'], 501);
+    }
+    #[Route('/auth/verify-forgot_password', name: 'api_verify_forfot_password', methods: ['GET'])]
+    public function confirmforgot_password(
+        Request $request,
+        EntityManagerInterface $em,
+        UsersRepository $userRepo,
+        Users $user,
+        VerifyEmailHelperInterface $verifyEmailHelper
+    ): Response {
+        $email = $request->query->get('email');
+        $password = $request->query->get('password');
+        try {
+            // Validate the full URI against the signature
+            $verifyEmailHelper->validateEmailConfirmation($request->getUri(), $email, $email);
+        } catch (VerifyEmailExceptionInterface $e) {
+            // Link was tampered with or expired
+            return $this->json(['error' => $e->getReason()], 400);
+        }
+
+        // Final check to prevent duplicate creation
+        if (!$userRepo->findOneBy(['email' => $email])) {
+            return $this->json(['error' => 'User not found.'], 400);
+        }
+
+        // Now we actually create and save the User
+        $user->setPassword($password); // In a real implementation, hash this password
+        $em->persist($user);
+        $em->flush();
+
+        // Registration is successful; return the JWT token
+        return $this->json([
+            'message' => 'password successfully reset!',
+            
+        ], 201);
+    }
     #[Route('/auth/register', name: 'api_register', methods: ['POST'])]
     public function register(
         Request $request, 
