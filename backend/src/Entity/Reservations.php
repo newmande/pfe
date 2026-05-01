@@ -59,6 +59,9 @@ class Reservations
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, nullable: true)]
     private string|float|null $duration = null;
 
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $category = null;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
@@ -163,6 +166,14 @@ class Reservations
     public function setDuration(?float $duration): static 
     { 
         $this->duration = $duration; 
+        return $this; 
+    }
+
+    public function getCategory(): ?string { return $this->category; }
+    
+    public function setCategory(?string $category): static 
+    { 
+        $this->category = $category; 
         return $this; 
     }
 }

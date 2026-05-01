@@ -1,0 +1,6 @@
+.page-container { padding: 1rem; }
+.auth-grid { display: flex; justify-content: center; }
+.auth-user-card, .form-group { margin-bottom: 1rem; }
+.auth-toggle { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+.form-group label { display: block; margin-bottom: 0.5rem; }
+.form-group input { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ccc; }

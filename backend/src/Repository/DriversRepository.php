@@ -27,7 +27,7 @@ class DriversRepository extends ServiceEntityRepository
        ->setParameter('isAvailable', true);
 
     
-    $busyDriversSubquery = $this->_em->createQueryBuilder()
+    $busyDriversSubquery = $this->getEntityManager()->createQueryBuilder()
         ->select('DISTINCT IDENTITY(r.driver)')
         ->from(\App\Entity\Reservations::class, 'r')
         ->where('r.driver IS NOT NULL')

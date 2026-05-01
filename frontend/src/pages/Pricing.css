@@ -1,0 +1,7 @@
+.page-container { padding: 1rem; }
+.pricing-grid { display: grid; gap: 1.5rem; }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; margin-bottom: 0.5rem; }
+.form-group input { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ccc; }
+.list-section { list-style: none; padding: 0; margin: 1rem 0 0; }
+.list-section li { margin-bottom: 0.75rem; }

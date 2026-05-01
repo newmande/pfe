@@ -14,7 +14,7 @@ class ReservationValidator
     public static function validateReservationData(array $data): void
     {
         
-        $required = ['datetime', 'pickupLocation', 'dropoffLocation', 'numberOfPassengers'];
+        $required = ['datetime', 'pickupLocation', 'dropoffLocation', 'numberOfPassengers','type'];
         foreach ($required as $field) {
             if (empty($data[$field])) {
                 throw new InvalidArgumentException("The field '$field' is required.");
@@ -42,19 +42,14 @@ class ReservationValidator
         if ($passengers < 1 || $passengers > 8) {
             throw new InvalidArgumentException('Number of passengers must be between 1 and 8.');
         }
+        $type = strtolower((string)$data['type']);
+        $allowedTypes = ['sedan', 'suv', 'van', 'luxury'];
+        if (!in_array($type, $allowedTypes)) {
+            throw new InvalidArgumentException("Invalid reservation type. Allowed: " . implode(', ', $allowedTypes));
+        }
 
         
-        if (isset($data['status'])) {
-            $valid = [
-                Reservations::STATUS_PENDING, 
-                Reservations::STATUS_CONFIRMED, 
-                Reservations::STATUS_CANCELLED, 
-                Reservations::STATUS_COMPLETED
-            ];
-            if (!in_array($data['status'], $valid)) {
-                throw new InvalidArgumentException('Invalid status provided.');
-            }
-        }
+        
     }
 
     
@@ -68,9 +63,12 @@ class ReservationValidator
         }
 
         $allowedTypes = ['sedan', 'van', 'suv', 'luxury'];
-        if (!in_array(strtolower($data['type']), $allowedTypes)) {
+        $typeLower = strtolower($data['type']);
+        if (!in_array($typeLower, $allowedTypes)) {
             throw new InvalidArgumentException("Invalid vehicle type. Allowed: " . implode(', ', $allowedTypes));
         }
+        // Normalize to lowercase
+        $data['type'] = $typeLower;
 
         $allowedCategories = ['economy', 'business', 'first'];
         if (!in_array(strtolower($data['category']), $allowedCategories)) {

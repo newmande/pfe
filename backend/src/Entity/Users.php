@@ -6,7 +6,7 @@ use App\Repository\UsersRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
-use LongitudeOne\Spatial\PHP\Types\SpatialInterface;
+use LongitudeOne\Spatial\PHP\Types\Geometry\Point;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -43,7 +43,7 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
 
    
     #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
-    private ?SpatialInterface $location = null;
+    private ?Point $location = null;
 
     public function __construct()
     {
@@ -143,12 +143,12 @@ class Users implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->history;
     }
 
-    public function getLocation(): ?SpatialInterface
+    public function getLocation(): ?Point
     {
         return $this->location;
     }
 
-    public function setLocation(?SpatialInterface $location): static
+    public function setLocation(?Point $location): static
     {
         $this->location = $location;
         return $this;

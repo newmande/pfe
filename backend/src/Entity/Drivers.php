@@ -6,7 +6,7 @@ use App\Repository\DriversRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
-use LongitudeOne\Spatial\PHP\Types\SpatialInterface;
+use LongitudeOne\Spatial\PHP\Types\Geometry\Point;
 
 #[ORM\Entity(repositoryClass: DriversRepository::class)]
 #[ORM\HasLifecycleCallbacks] // ✅ Essential for automatic updatedAt
@@ -28,7 +28,7 @@ class Drivers
 
     
     #[ORM\Column(type: 'point', nullable: true, options: ['srid' => 4326])]
-    private ?SpatialInterface $location = null;
+    private ?Point $location = null;
 
     #[ORM\Column(type: 'datetime_immutable')]
     private ?\DateTimeImmutable $createdAt = null;
@@ -41,6 +41,10 @@ class Drivers
      */
     #[ORM\OneToMany(targetEntity: Reservations::class, mappedBy: 'driver')]
     private Collection $history;
+
+    #[ORM\OneToOne(targetEntity: Users::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?Users $user = null;
 
     public function __construct()
     {
@@ -120,12 +124,12 @@ class Drivers
         return $this;
     }
 
-    public function getLocation(): ?SpatialInterface
+    public function getLocation(): ?Point
     {
         return $this->location;
     }
 
-    public function setLocation(?SpatialInterface $location): static
+    public function setLocation(?Point $location): static
     {
         $this->location = $location;
         return $this;
@@ -139,5 +143,16 @@ class Drivers
     public function getUpdatedAt(): ?\DateTimeInterface
     {
         return $this->updatedAt;
+    }
+
+    public function getUser(): ?Users
+    {
+        return $this->user;
+    }
+
+    public function setUser(?Users $user): static
+    {
+        $this->user = $user;
+        return $this;
     }
 }

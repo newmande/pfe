@@ -102,6 +102,55 @@ class UsersController extends AbstractController
     }
 
     
+    #[Route('', name: 'user_admin_create', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function createUser(Request $request, EntityManagerInterface $em): JsonResponse
+    {
+        $data = json_decode($request->getContent(), true);
+
+        // Validate required fields
+        if (empty($data['email']) || empty($data['password']) || empty($data['name'])) {
+            return $this->json(['error' => 'Email, password, and name are required'], 400);
+        }
+
+        // Check if email already exists
+        $existingUser = $em->getRepository(Users::class)->findOneBy(['email' => $data['email']]);
+        if ($existingUser) {
+            return $this->json(['error' => 'Email already exists'], 409);
+        }
+
+        $user = new Users();
+        $user->setEmail($data['email']);
+        $user->setName($data['name']);
+        $user->setPassword(password_hash($data['password'], PASSWORD_BCRYPT));
+        
+        if (isset($data['phone'])) {
+            $user->setPhone($data['phone']);
+        }
+
+        // Set role
+        $role = isset($data['role']) ? strtoupper($data['role']) : 'ROLE_USER';
+        if (!str_starts_with($role, 'ROLE_')) {
+            $role = 'ROLE_' . $role;
+        }
+        $user->setRoles([$role]);
+
+        // Set location if provided
+        if (isset($data['latitude'], $data['longitude'])) {
+            $lat = (float)$data['latitude'];
+            $lon = (float)$data['longitude'];
+            if ($lat >= -90 && $lat <= 90 && $lon >= -180 && $lon <= 180) {
+                $user->setLocation(new Point($lon, $lat));
+            }
+        }
+
+        $em->persist($user);
+        $em->flush();
+
+        return $this->json($this->serialize($user), 201);
+    }
+
+    
 
     private function mapUserData(Users $user, array $data): void
     {

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Password Reset</title>
+</head>
+<body>
+    <h1>Password Reset Test</h1>
+    <button onclick="testGet()">Test GET (Validate Link)</button>
+    <button onclick="testPost()">Test POST (Reset Password)</button>
+    <div id="results"></div>
+
+    <script>
+        const resetUrl = "http://localhost:8000/auth/verify-forgot_password?email=play4store7%40gmail.com&expires=1777491470&signature=5BgSXALe7tI_vRsxkUgK1OLFp-gxVq3G0aCPkl4XsH4&timestamp=1777487870&token=KgYxEFnl8AK6ps1fKNH3lB7nxbooMIA87%2BdQ%2BkGyfrM%3D";
+
+        async function testGet() {
+            console.log('Testing GET request...');
+            try {
+                const response = await fetch(resetUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+                console.log('GET Response:', data);
+                document.getElementById('results').innerHTML = `
+                    <h3>GET Response:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                console.error('GET Error:', error);
+                document.getElementById('results').innerHTML = `<p>GET Error: ${error.message}</p>`;
+            }
+        }
+
+        async function testPost() {
+            console.log('Testing POST request...');
+            try {
+                const response = await fetch(resetUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: 'NewPassword123'
+                    })
+                });
+
+                const data = await response.json();
+                console.log('POST Response:', data);
+                document.getElementById('results').innerHTML = `
+                    <h3>POST Response:</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+            } catch (error) {
+                console.error('POST Error:', error);
+                document.getElementById('results').innerHTML = `<p>POST Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

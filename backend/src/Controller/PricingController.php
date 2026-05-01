@@ -13,15 +13,31 @@ use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/pricing')]
-#[IsGranted('ROLE_ADMIN')]
 class PricingController extends AbstractController
 {
-   
-    #[Route('', name: 'app_pricing_index', methods: ['GET'])]
-    public function index(PricingRepository $repo): JsonResponse
+    private EntityManagerInterface $entityManager;
+
+    public function __construct(EntityManagerInterface $entityManager)
     {
-        $pricingList = $repo->findAllActive();
-        $data = array_map(fn(Pricing $p) => $this->serializePricing($p), $pricingList);
+        $this->entityManager = $entityManager;
+    }
+
+    #[Route('', name: 'pricing_index', methods: ['GET'])]
+    public function index(PricingRepository $pricingRepository): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user) {
+            return $this->json(['error' => 'Authentication required'], 401);
+        }
+
+        // Admins see all pricing rules, users see only active ones
+        if ($this->isGranted('ROLE_ADMIN')) {
+            $pricing = $pricingRepository->findBy([], ['vehicleType' => 'ASC', 'createdAt' => 'DESC']);
+        } else {
+            $pricing = $pricingRepository->findAllActive();
+        }
+
+        $data = array_map(fn(Pricing $p) => $this->serializePricing($p), $pricing);
 
         return $this->json([
             'status' => 'success',
@@ -31,6 +47,18 @@ class PricingController extends AbstractController
     }
 
    
+    #[Route('/active/{vehicleType}/{categoryType}', name: 'app_pricing_active', methods: ['GET'])]
+    public function getActivePricing(string $vehicleType, string $categoryType, PricingRepository $repo): JsonResponse
+    {
+        $pricing = $repo->findActiveByTypeAndCategory($vehicleType, $categoryType);
+
+        if (!$pricing) {
+            return $this->json(['error' => 'No active pricing found for this configuration'], 404);
+        }
+
+        return $this->json($this->serializePricing($pricing));
+    }
+
     #[Route('/find', name: 'app_pricing_find', methods: ['GET'], priority: 2)]
     public function findByTypeCategory(Request $request, PricingRepository $repo): JsonResponse
     {
@@ -59,6 +87,7 @@ class PricingController extends AbstractController
 
     
     #[Route('', name: 'app_pricing_create', methods: ['POST'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function create(Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -81,6 +110,7 @@ class PricingController extends AbstractController
 
     
     #[Route('/{id}', name: 'app_pricing_update', methods: ['PUT', 'PATCH'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function update(Pricing $pricing, Request $request, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -101,6 +131,7 @@ class PricingController extends AbstractController
 
     
     #[Route('/{id}', name: 'app_pricing_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_ADMIN')]
     public function delete(Pricing $pricing, EntityManagerInterface $em): JsonResponse
     {
         $em->remove($pricing);

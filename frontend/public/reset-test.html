@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Reset Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a67d8;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .reset-link {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            word-break: break-all;
+        }
+
+        .reset-link code {
+            color: #e83e8c;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .instructions {
+            background: #e7f5ff;
+            border: 1px solid #b3d7ff;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+
+        .instructions h4 {
+            color: #004085;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .instructions p {
+            color: #004085;
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Password Reset</h1>
+            <p>Reset your password in 3 simple steps</p>
+        </div>
+
+        <div id="alerts"></div>
+
+        <!-- Step 1: Forgot Password -->
+        <div id="step1" class="step active">
+            <h3>Step 1: Enter your email</h3>
+            <form id="forgotPasswordForm">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" placeholder="Enter your email address" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="forgotPasswordBtn">Send Reset Link</button>
+            </form>
+        </div>
+
+        <!-- Step 2: Reset Link -->
+        <div id="step2" class="step">
+            <h3>Step 2: Click the reset link</h3>
+            <div class="instructions">
+                <h4>Reset link generated!</h4>
+                <p>We've generated a password reset link. Click the button below to test it.</p>
+            </div>
+            <div id="resetLinkContainer"></div>
+            <button class="btn btn-primary" id="testResetLinkBtn">Test Reset Link</button>
+            <button class="btn btn-secondary" id="backToStep1">Back</button>
+        </div>
+
+        <!-- Step 3: Reset Password -->
+        <div id="step3" class="step">
+            <h3>Step 3: Enter new password</h3>
+            <form id="resetPasswordForm">
+                <div class="form-group">
+                    <label for="newPassword">New Password</label>
+                    <input type="password" id="newPassword" name="newPassword" placeholder="Enter new password" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Confirm new password" required>
+                </div>
+                <button type="submit" class="btn btn-primary" id="resetPasswordBtn">Reset Password</button>
+            </form>
+        </div>
+
+        <!-- Success -->
+        <div id="success" class="step">
+            <h3>Password Reset Complete!</h3>
+            <div class="alert alert-success">
+                Your password has been successfully reset. You can now login with your new password.
+            </div>
+            <button class="btn btn-primary" onclick="location.reload()">Test Again</button>
+        </div>
+    </div>
+
+    <script>
+        let currentResetUrl = '';
+
+        function showAlert(message, type = 'info') {
+            const alertsContainer = document.getElementById('alerts');
+            alertsContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                alertsContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        function showStep(stepNumber) {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active');
+            });
+            document.getElementById('step' + stepNumber).classList.add('active');
+        }
+
+        function setLoading(buttonId, loading = true) {
+            const button = document.getElementById(buttonId);
+            if (loading) {
+                button.disabled = true;
+                button.innerHTML = '<span class="loading"></span> Loading...';
+            } else {
+                button.disabled = false;
+                button.textContent = buttonId === 'forgotPasswordBtn' ? 'Send Reset Link' : 'Reset Password';
+            }
+        }
+
+        // Step 1: Forgot Password
+        document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            
+            if (!email) {
+                showAlert('Please enter your email address', 'error');
+                return;
+            }
+
+            setLoading('forgotPasswordBtn');
+
+            try {
+                const response = await fetch('http://localhost:8000/auth/forgot_password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ email })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(data.message || 'Password reset link sent!', 'success');
+                    
+                    if (data.resetUrl) {
+                        currentResetUrl = data.resetUrl;
+                        
+                        // Show reset link
+                        const resetLinkContainer = document.getElementById('resetLinkContainer');
+                        resetLinkContainer.innerHTML = `
+                            <div class="reset-link">
+                                <strong>Reset Link:</strong><br>
+                                <code>${data.resetUrl}</code>
+                            </div>
+                        `;
+                        
+                        showStep(2);
+                    }
+                } else {
+                    showAlert(data.error || 'Failed to send reset link', 'error');
+                }
+            } catch (error) {
+                showAlert('Network error: ' + error.message, 'error');
+            } finally {
+                setLoading('forgotPasswordBtn', false);
+            }
+        });
+
+        // Step 2: Test Reset Link
+        document.getElementById('testResetLinkBtn').addEventListener('click', () => {
+            if (currentResetUrl) {
+                window.location.href = currentResetUrl;
+            }
+        });
+
+        document.getElementById('backToStep1').addEventListener('click', () => {
+            showStep(1);
+        });
+
+        // Step 3: Reset Password
+        document.getElementById('resetPasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (newPassword !== confirmPassword) {
+                showAlert('Passwords do not match', 'error');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showAlert('Password must be at least 6 characters long', 'error');
+                return;
+            }
+
+            setLoading('resetPasswordBtn');
+
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ password: newPassword })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(data.message || 'Password reset successful!', 'success');
+                    showStep('success');
+                } else {
+                    showAlert(data.error || 'Failed to reset password', 'error');
+                }
+            } catch (error) {
+                showAlert('Error resetting password: ' + error.message, 'error');
+            } finally {
+                setLoading('resetPasswordBtn', false);
+            }
+        });
+
+        // Check if we're on a reset password page
+        function checkResetPasswordPage() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const email = urlParams.get('email');
+            
+            if (email && window.location.pathname.includes('verify-forgot_password')) {
+                // We're on the reset password page
+                showStep(3);
+                
+                // Validate the reset link
+                validateResetLink();
+            }
+        }
+
+        async function validateResetLink() {
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Reset link is valid! Please enter your new password.', 'success');
+                } else {
+                    showAlert(data.error || 'Invalid or expired reset link', 'error');
+                    showStep(1);
+                }
+            } catch (error) {
+                showAlert('Error validating reset link: ' + error.message, 'error');
+                showStep(1);
+            }
+        }
+
+        // Check if we're on a reset password page when page loads
+        checkResetPasswordPage();
+    </script>
+</body>
+</html>

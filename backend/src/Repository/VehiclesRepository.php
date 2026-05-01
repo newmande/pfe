@@ -24,12 +24,12 @@ class VehiclesRepository extends ServiceEntityRepository
 
     
     $qb->where('v.availability = :isAvailable')
-       ->andWhere('v.type = :type')
+       ->andWhere('LOWER(v.type) = LOWER(:type)')
        ->setParameter('isAvailable', true)
        ->setParameter('type', $type);
 
     
-    $busyVehiclesSubquery = $this->_em->createQueryBuilder()
+    $busyVehiclesSubquery = $this->getEntityManager()->createQueryBuilder()
         ->select('DISTINCT IDENTITY(r.vehicle)')
         ->from(\App\Entity\Reservations::class, 'r')
         ->where('r.vehicle IS NOT NULL')
@@ -67,5 +67,35 @@ class VehiclesRepository extends ServiceEntityRepository
             ->setParameter('available', true)
             ->getQuery()
             ->getResult();
+    }
+
+    public function findAvailableVehicleByTypeAndCategory(string $type, ?string $category, \DateTimeInterface $start, \DateTimeInterface $end): ?Vehicles
+    {
+        $qb = $this->createQueryBuilder('v');
+
+        $qb->where('v.availability = :isAvailable')
+           ->andWhere('LOWER(v.type) = LOWER(:type)')
+           ->setParameter('isAvailable', true)
+           ->setParameter('type', $type);
+
+        // Add category filter if provided
+        if (!empty($category)) {
+            $qb->andWhere('LOWER(v.category) = LOWER(:category)')
+               ->setParameter('category', $category);
+        }
+
+        $busyVehiclesSubquery = $this->getEntityManager()->createQueryBuilder()
+            ->select('DISTINCT IDENTITY(r.vehicle)')
+            ->from(\App\Entity\Reservations::class, 'r')
+            ->where('r.vehicle IS NOT NULL')
+            ->andWhere('r.datetime < :end')
+            ->andWhere("DATE_ADD(r.datetime, r.duration, 'MINUTE') > :start");
+
+        $qb->andWhere($qb->expr()->notIn('v.id', $busyVehiclesSubquery->getDQL()))
+           ->setParameter('start', $start)
+           ->setParameter('end', $end)
+           ->setMaxResults(1);
+
+        return $qb->getQuery()->getOneOrNullResult();
     }
 }

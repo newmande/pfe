@@ -26,70 +26,132 @@ class AuthController extends AbstractController
      * The user is NOT saved to the database yet.
      */
     #[Route('/auth/forgot_password', name: 'api_forgot_password', methods: ['POST'])]
-    public function forgotPassword(Request $request,UsersRepository $userRepo,
+    public function forgotPassword(Request $request, UsersRepository $userRepo,
         VerifyEmailHelperInterface $verifyEmailHelper,
         MailerInterface $mailer): JsonResponse
     {
-        $email= $request->request->get('email');
-        $password = $request->request->get('password');
+        $data = json_decode($request->getContent(), true);
+        $email = $data['email'] ?? null;
         
+        if (!$email) {
+            return $this->json(['error' => 'Email is required'], 400);
+        }
+        
+        // Always return success for security (don't reveal if email exists)
         $user = $userRepo->findOneBy(['email' => $email]);
         if (!$user) {
-            return $this->json(['error' => 'Email not found'], 404);
+            return $this->json(['message' => 'If an account with this email exists, a password reset link has been sent.'], 200);
         }
-         $signatureComponents = $verifyEmailHelper->generateSignature(
-                'api_forgot_password', // Route name below
+
+        try {
+            // Generate a secure reset token with 1 hour expiration
+            $signatureComponents = $verifyEmailHelper->generateSignature(
+                'api_verify_forgot_password',
                 $email,
                 $email,
                 [
                     'email' => $email,
-                    'password' => $password // In a real implementation, generate a secure token instead
+                    'timestamp' => time(),
+                    'expires' => time() + 3600
                 ]
             );
 
-            $email = (new TemplatedEmail())
+            $backendResetUrl = $signatureComponents->getSignedUrl();
+            
+            // Parse the backend URL to extract parameters
+            $urlParts = parse_url($backendResetUrl);
+            $queryParams = $urlParts['query'] ?? '';
+            
+            // Create frontend URL that points to reset-password.html with the same parameters
+            $frontendResetUrl = 'http://localhost:5174/reset-password.html?' . $queryParams;
+
+            // Send email with frontend URL
+            $resetEmail = (new TemplatedEmail())
                 ->from('noreply@yourdomain.com')
                 ->to($email)
-                ->subject('Complete your Registration')
-                ->htmlTemplate('emails/registration_verify.html.twig')
-                ->context(['signedUrl' => $signatureComponents->getSignedUrl()]);
+                ->subject('Reset Your Password - TransportHub')
+                ->htmlTemplate('emails/password_reset.html.twig')
+                ->context(['frontendUrl' => $frontendResetUrl]);
 
-            $mailer->send($email);
-        return $this->json(['message' => 'Password reset functionality not implemented yet.'], 501);
+            $mailer->send($resetEmail);
+
+            // Return success with both URLs for testing
+            return $this->json([
+                'message' => 'Password reset link has been sent to your email.',
+                'resetUrl' => $frontendResetUrl,
+                'backendUrl' => $backendResetUrl
+            ], 200);
+
+        } catch (\Exception $e) {
+            // Log error but don't reveal to user
+            error_log('Password reset error: ' . $e->getMessage());
+            return $this->json(['error' => 'Failed to send reset email. Please try again later.'], 500);
+        }
     }
-    #[Route('/auth/verify-forgot_password', name: 'api_verify_forfot_password', methods: ['GET'])]
-    public function confirmforgot_password(
+    #[Route('/auth/verify-forgot_password', name: 'api_verify_forgot_password', methods: ['GET', 'POST'])]
+    public function confirmForgotPassword(
         Request $request,
         EntityManagerInterface $em,
         UsersRepository $userRepo,
-        Users $user,
+        UserPasswordHasherInterface $hasher,
         VerifyEmailHelperInterface $verifyEmailHelper
-    ): Response {
+    ): JsonResponse {
         $email = $request->query->get('email');
-        $password = $request->query->get('password');
+        
+        if (!$email) {
+            return $this->json(['error' => 'Invalid reset link'], 400);
+        }
+        
         try {
-            // Validate the full URI against the signature
+            // Validate the signed URL
             $verifyEmailHelper->validateEmailConfirmation($request->getUri(), $email, $email);
         } catch (VerifyEmailExceptionInterface $e) {
-            // Link was tampered with or expired
-            return $this->json(['error' => $e->getReason()], 400);
+            return $this->json(['error' => 'Invalid or expired reset link'], 400);
         }
 
-        // Final check to prevent duplicate creation
-        if (!$userRepo->findOneBy(['email' => $email])) {
-            return $this->json(['error' => 'User not found.'], 400);
+        // Find user
+        $user = $userRepo->findOneBy(['email' => $email]);
+        if (!$user) {
+            return $this->json(['error' => 'User not found'], 404);
         }
 
-        // Now we actually create and save the User
-        $user->setPassword($password); // In a real implementation, hash this password
-        $em->persist($user);
-        $em->flush();
+        // GET request: show that link is valid
+        if ($request->isMethod('GET')) {
+            return $this->json([
+                'message' => 'Reset link is valid. Please POST your new password.',
+                'email' => $email
+            ]);
+        }
 
-        // Registration is successful; return the JWT token
-        return $this->json([
-            'message' => 'password successfully reset!',
+        // POST request: reset password
+        $data = json_decode($request->getContent(), true);
+        $newPassword = $data['password'] ?? null;
+
+        if (!$newPassword) {
+            return $this->json(['error' => 'Password is required'], 400);
+        }
+
+        if (strlen($newPassword) < 6) {
+            return $this->json(['error' => 'Password must be at least 6 characters long'], 400);
+        }
+
+        try {
+            // Hash and update password
+            $hashedPassword = $hasher->hashPassword($user, $newPassword);
+            $user->setPassword($hashedPassword);
             
-        ], 201);
+            $em->persist($user);
+            $em->flush();
+
+            return $this->json([
+                'message' => 'Password has been successfully reset!',
+                'email' => $email
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log('Password reset error: ' . $e->getMessage());
+            return $this->json(['error' => 'Failed to reset password. Please try again.'], 500);
+        }
     }
     #[Route('/auth/register', name: 'api_register', methods: ['POST'])]
     public function register(
@@ -167,12 +229,12 @@ class AuthController extends AbstractController
             $verifyEmailHelper->validateEmailConfirmation($request->getUri(), $email, $email);
         } catch (VerifyEmailExceptionInterface $e) {
             // Link was tampered with or expired
-            return $this->json(['error' => $e->getReason()], 400);
+            return $this->redirect('http://localhost:5173/login?registration=error&message=' . urlencode($e->getReason()));
         }
 
         // Final check to prevent duplicate creation
         if ($userRepo->findOneBy(['email' => $email])) {
-            return $this->json(['error' => 'User already verified and created.'], 400);
+            return $this->redirect('http://localhost:5173/login?registration=error&message=' . urlencode('User already verified and created.'));
         }
 
         // Now we actually create and save the User
@@ -182,20 +244,12 @@ class AuthController extends AbstractController
              ->setPhone($request->query->get('phone'))
              ->setRoles(['ROLE_USER'])
              ->setPassword($request->query->get('pwd')); // Already hashed
-
+            
         $em->persist($user);
         $em->flush();
 
-        // Registration is successful; return the JWT token
-        return $this->json([
-            'message' => 'Account successfully created!',
-            'user' => [
-                'id' => $user->getId(),
-                'name' => $user->getName(),
-                'email' => $user->getEmail()
-            ],
-            'token' => $jwtManager->create($user)
-        ], 201);
+        // Registration is successful; redirect to frontend login page
+        return $this->redirect('http://localhost:5173/login?registration=success');
     }
 
     #[Route('/auth/login', name: 'api_login', methods: ['POST'])]
@@ -206,10 +260,22 @@ class AuthController extends AbstractController
         JWTTokenManagerInterface $jwtManager
     ): JsonResponse {
         $data = json_decode($request->getContent(), true);
+        
+        // Debug logging
+        error_log('=== LOGIN REQUEST DEBUG ===');
+        error_log('Request content: ' . $request->getContent());
+        error_log('Decoded data: ' . json_encode($data));
+        error_log('Request method: ' . $request->getMethod());
+        error_log('Request URI: ' . $request->getRequestUri());
+        
         $email = $data['email'] ?? null;
         $password = $data['password'] ?? null;
+        
+        error_log('Email: ' . ($email ? $email : 'null'));
+        error_log('Password: ' . ($password ? 'set' : 'null'));
 
         if (!$email || !$password) {
+            error_log('=== MISSING CREDENTIALS ===');
             return $this->json(['error' => 'Email and password are required'], 400);
         }
 
@@ -227,6 +293,12 @@ class AuthController extends AbstractController
                 'name' => $user->getName()
             ]
         ], 200);
+    }
+
+    #[Route('/auth/logout', name: 'api_logout', methods: ['POST'])]
+    public function logout(): JsonResponse
+    {
+        return $this->json(['message' => 'Logged out successfully'], 200);
     }
 
     #[IsGranted('ROLE_ADMIN')]

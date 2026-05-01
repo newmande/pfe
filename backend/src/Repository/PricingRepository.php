@@ -51,4 +51,17 @@ class PricingRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    public function findActiveByTypeOnly(string $vehicleType): ?Pricing
+    {
+        return $this->createQueryBuilder('p')
+            ->where('p.active = :active')
+            ->andWhere('p.vehicleType = :vehicleType')
+            ->setParameter('active', true)
+            ->setParameter('vehicleType', $vehicleType)
+            ->orderBy('p.createdAt', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }

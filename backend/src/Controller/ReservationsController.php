@@ -124,10 +124,17 @@ class ReservationsController extends AbstractController
 
             
             $driver = $driversRepo->findAvailableDriver($startTime, $endTime);
-            $vehicle = $vehiclesRepo->findAvailableVehicle($data['type'] ?? 'sedan', $startTime, $endTime);
+            $requestedCategory = $data['category'] ?? null;
+            $vehicle = $vehiclesRepo->findAvailableVehicleByTypeAndCategory($data['type'] ?? 'sedan', $requestedCategory, $startTime, $endTime);
 
-            if (!$driver || !$vehicle) {
+            if (!$driver && !$vehicle) {
                 return $this->json(['error' => 'No driver or vehicle available for this time'], 409);
+            }
+            if (!$driver) {
+                return $this->json(['error' => 'No driver available for this time'], 409);
+            }
+            if (!$vehicle) {
+                return $this->json(['error' => 'No vehicle of type "' . ($data['type'] ?? 'sedan') . '" with category "' . ($requestedCategory ?? 'any') . '" available for this time'], 409);
             }
 
             
@@ -138,9 +145,35 @@ class ReservationsController extends AbstractController
             $reservation->setDriver($driver);
             $reservation->setVehicle($vehicle);
             $reservation->setStatus('pending');
-            $pricing = $pricingRepo->findActiveByTypeAndCategory($vehicle->getType(), $vehicle->getCategory());
-            if ($pricing && $reservation->getDistance()) {
-                $reservation->setPrice((string)$pricing->calculatePrice((float)$reservation->getDistance()));
+            
+            // Calculate price based on distance
+            if ($reservation->getDistance()) {
+                $distance = (float)$reservation->getDistance();
+                $vehicleType = $vehicle->getType();
+                $requestedCategory = $reservation->getCategory() ?? $vehicle->getCategory();
+                
+                // Try to find pricing: 1) requested category, 2) vehicle's category, 3) type-only, 4) generic sedan fallback
+                $pricing = $pricingRepo->findActiveByTypeAndCategory($vehicleType, $requestedCategory);
+                
+                if (!$pricing && $requestedCategory !== $vehicle->getCategory()) {
+                    $pricing = $pricingRepo->findActiveByTypeAndCategory($vehicleType, $vehicle->getCategory());
+                }
+                
+                if (!$pricing) {
+                    $pricing = $pricingRepo->findActiveByTypeOnly($vehicleType);
+                }
+                
+                if (!$pricing && $vehicleType !== 'sedan') {
+                    $pricing = $pricingRepo->findActiveByTypeOnly('sedan');
+                }
+                
+                if ($pricing) {
+                    $reservation->setPrice((string)$pricing->calculatePrice($distance));
+                } else {
+                    // Default pricing: base 5 TND + 0.5 per km, min 5 TND
+                    $defaultPrice = max(5 + ($distance * 0.5), 5);
+                    $reservation->setPrice((string)round($defaultPrice, 2));
+                }
             }
             
             $this->entityManager->persist($reservation);
@@ -213,6 +246,7 @@ class ReservationsController extends AbstractController
         if (isset($data['dropoffLocation'])) $r->setDropoffLocation($data['dropoffLocation']);
         if (isset($data['numberOfPassengers'])) $r->setNumberOfPassengers((int)$data['numberOfPassengers']);
         if (isset($data['status'])) $r->setStatus($data['status'] ?? 'pending');
+        if (isset($data['category'])) $r->setCategory($data['category']);
     }
 
     
@@ -225,13 +259,19 @@ class ReservationsController extends AbstractController
             'dropoffLocation' => $r->getDropoffLocation(),
             'status' => $r->getStatus(),
             'passengers' => $r->getNumberOfPassengers(),
+            'category' => $r->getCategory(),
             'price' => $r->getPrice() . ' TND',
             'distance' => $r->getDistance() . ' km',
             'duration' => $r->getDuration() . ' mins',
             'driver' => $r->getDriver() ? ['id' => $r->getDriver()->getId(), 'name' => $r->getDriver()->getName()] : null,
             'vehicle' => $r->getVehicle() ? [
-                'model' => $r->getVehicle()->getModel(), 
+                'model' => $r->getVehicle()->getModel(),
                 'license' => $r->getVehicle()->getLicense()
+            ] : null,
+            'user' => $r->getUser() ? [
+                'id' => $r->getUser()->getId(),
+                'name' => $r->getUser()->getName(),
+                'email' => $r->getUser()->getEmail()
             ] : null,
         ];
     }
@@ -262,6 +302,100 @@ public function confirmRegistration(
     $em->flush(); // No need for persist() if the object came from the DB
 
     return $this->json(['message' => 'Reservation confirmed successfully!'], 200);
-}}
+}
+
+    #[Route('/{id}/status', name: 'app_reservations_update_status', methods: ['PATCH'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_DRIVER')]
+    public function updateStatus(
+        Request $request,
+        Reservations $reservation,
+        EntityManagerInterface $em
+    ): JsonResponse {
+        $user = $this->getUser();
+        if (!$user) return $this->json(['error' => 'Unauthorized'], 401);
+
+        // Find driver by user
+        $driver = $this->entityManager->getRepository(\App\Entity\Drivers::class)->findOneBy(['user' => $user]);
+        if (!$driver) return $this->json(['error' => 'Driver profile not found'], 404);
+
+        // Check if this reservation belongs to the driver
+        if ($reservation->getDriver() !== $driver) {
+            return $this->json(['error' => 'Access denied'], 403);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $newStatus = $data['status'] ?? null;
+
+        $allowedStatuses = ['confirmed', 'in_progress', 'completed', 'cancelled'];
+        if (!$newStatus || !in_array($newStatus, $allowedStatuses)) {
+            return $this->json(['error' => 'Invalid status'], 400);
+        }
+
+        // Status transition validation
+        $currentStatus = $reservation->getStatus();
+        if ($currentStatus === 'completed' || $currentStatus === 'cancelled') {
+            return $this->json(['error' => 'Cannot change status of completed or cancelled reservation'], 400);
+        }
+
+        if ($currentStatus === 'pending' && $newStatus !== 'confirmed') {
+            return $this->json(['error' => 'Pending reservations can only be confirmed'], 400);
+        }
+
+        if ($currentStatus === 'confirmed' && !in_array($newStatus, ['in_progress', 'cancelled'])) {
+            return $this->json(['error' => 'Confirmed reservations can only be started or cancelled'], 400);
+        }
+
+        if ($currentStatus === 'in_progress' && $newStatus !== 'completed') {
+            return $this->json(['error' => 'In-progress reservations can only be completed'], 400);
+        }
+
+        $reservation->setStatus($newStatus);
+        $em->flush();
+
+        return $this->json([
+            'message' => 'Status updated successfully',
+            'reservation' => $this->serialize($reservation)
+        ]);
+    }
+
+    #[Route('/{id}', name: 'app_reservations_update', methods: ['PUT'], requirements: ['id' => '\d+'])]
+    #[IsGranted('ROLE_ADMIN')]
+    public function update(
+        Request $request,
+        Reservations $reservation,
+        EntityManagerInterface $em
+    ): JsonResponse {
+        $data = json_decode($request->getContent(), true);
+
+        try {
+            $this->mapData($reservation, $data);
+            $em->flush();
+
+            return $this->json([
+                'message' => 'Reservation updated successfully',
+                'reservation' => $this->serialize($reservation)
+            ]);
+        } catch (\Exception $e) {
+            return $this->json(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    #[Route('/driver-reservations', name: 'app_reservations_driver', methods: ['GET'])]
+    #[IsGranted('ROLE_DRIVER')]
+    public function getDriverReservations(ReservationsRepository $repo): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user) return $this->json(['error' => 'Unauthorized'], 401);
+
+        // Find driver by user
+        $driver = $this->entityManager->getRepository(\App\Entity\Drivers::class)->findOneBy(['user' => $user]);
+        if (!$driver) return $this->json(['error' => 'Driver profile not found'], 404);
+
+        $reservations = $repo->findBy(['driver' => $driver], ['datetime' => 'DESC']);
+        $data = array_map(fn($r) => $this->serialize($r), $reservations);
+
+        return $this->json($data);
+    }
+}
 
         
